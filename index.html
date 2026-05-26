@@ -775,45 +775,56 @@ function renderPAlunos(){
   const tabs=[{s:'A',l:'Ativos'},{s:'P',l:'Prospects'},{s:'E',l:'Experimentais'},{s:'AV',l:'Avulsos'}];
   const cnt={};tabs.forEach(t=>cnt[t.s]=dados.filter(a=>a.s===t.s).length);
   const lista=dados.filter(a=>a.s===alTab&&(!ft||a.n.toLowerCase().includes(ft.toLowerCase())||(a.h||'').toLowerCase().includes(ft.toLowerCase())));
+  window._listaAtual = lista; // salva para acessar por índice
   set('<div class="pt">Alunos</div><div class="ps">'+cnt.A+' ativos · '+cnt.P+' prospects · '+cnt.E+' experimentais · '+cnt.AV+' avulsos</div>'+
   '<div class="tabs">'+tabs.map(t=>'<button class="tab'+(alTab===t.s?' act actb':'')+'" onclick="alTab=\''+t.s+'\';renderPAlunos()">'+t.l+' ('+cnt[t.s]+')</button>').join('')+'</div>'+
   '<div class="tb"><input class="srch" placeholder="Buscar nome ou horário…" oninput="ft=this.value;renderPAlunos()" value="'+ft+'">'+
   '<div style="margin-left:auto"><button class="btn btnb" onclick="abrirCadAluno()"><i class="ti ti-plus"></i> Novo aluno</button></div></div>'+
   '<div class="tw"><table><thead><tr><th>Nome</th><th>Horário</th><th>Plano</th><th>Próx. vencto</th><th>Valor</th><th></th></tr></thead><tbody>'+
-  (lista.length?lista.map((a,i)=>'<tr><td>'+ncell(a)+'</td><td style="color:#666">'+(a.h||'—')+'</td><td>'+a.pl+'</td><td>'+(a.px||'—')+'</td><td>R$ '+a.v+'</td>'+
-  '<td><button class="btn btns" onclick="verAlunoDetalhe(\''+esc(JSON.stringify(a).replace(/\\/g,'\\\\'))+'\')">ver</button></td></tr>').join(''):
-  '<tr><td colspan="6" style="text-align:center;padding:20px;color:#666">Nenhum resultado</td></tr>')+
+  (lista.length?lista.map((a,i)=>'<tr onclick="verAlunoIdx('+i+')" style="cursor:pointer"><td>'+ncell(a)+'</td><td style="color:#7A5230">'+(a.h||'—')+'</td><td>'+a.pl+'</td><td>'+(a.px||'—')+'</td><td style="color:#B8924A;font-weight:600">R$ '+a.v+'</td>'+
+  '<td><button class="btn btns" onclick="event.stopPropagation();verAlunoIdx('+i+')">ver</button></td></tr>').join(''):
+  '<tr><td colspan="6" style="text-align:center;padding:20px;color:#7A5230">Nenhum resultado</td></tr>')+
   '</tbody></table></div>');
 }
 
-function verAlunoDetalhe(json){
-  const a=JSON.parse(json);
+function verAlunoIdx(i){
+  const a = (window._listaAtual||[])[i];
+  if(!a) return;
+  verAlunoDetalhe(a);
+}
+
+function verAlunoDetalhe(a){
   set('<div class="tb"><button class="btn" onclick="navPAlunos()"><i class="ti ti-arrow-left"></i> Voltar</button></div>'+
   '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'+
   '<div class="av '+avcls(a.id||0)+'" style="width:40px;height:40px;font-size:14px">'+ini(a.n)+'</div>'+
-  '<div><div style="font-size:15px;font-weight:500">'+a.n+'</div><div style="font-size:12px;color:#666">'+(a.tel||'Telefone não informado')+'</div></div>'+
+  '<div><div style="font-size:15px;font-weight:500;color:#4A2E1A">'+a.n+'</div>'+
+  '<div style="font-size:12px;color:#7A5230">'+(a.tel||'Telefone não informado')+'</div></div>'+
   '<span style="margin-left:auto">'+sbadge(a.s)+'</span></div>'+
-  '<div class="dp"><h3 style="color:#2563eb">Dados</h3>'+
-  dr('Plano',a.pl||'—')+dr('Horário(s)',a.h||'—')+dr('Valor','R$ '+(a.v||0))+dr('Último pagto',a.pg||'—')+dr('Próx. vencimento',a.px||'—')+'</div>'+
+  '<div class="dp"><h3>Dados</h3>'+
+  dr('Plano',a.pl||'—')+dr('Horário(s)',a.h||'—')+dr('Valor','R$ '+(a.v||0))+
+  dr('Último pagto',a.pg||'—')+dr('Próx. vencimento',a.px||'—')+'</div>'+
   '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
   (a.s==='A'?'<button class="btn btnb" onclick="abrirPagPilates(\''+esc(a.n)+'\','+(a.v||0)+')"><i class="ti ti-cash"></i> Registrar pagamento</button>':'')+
   (a.s==='A'?'<button class="btn" onclick="abrirTroca(\''+esc(a.n)+'\',\''+esc(a.h||'')+'\')"><i class="ti ti-arrows-exchange"></i> Troca de aula</button>':'')+
-  (a.s==='E'?'<button class="btn btnb" onclick="converterAtivo(\''+esc(JSON.stringify(a).replace(/\\/g,'\\\\'))+'\')"><i class="ti ti-user-check"></i> Converter para ativo</button>':'')+
+  (a.s==='E'?'<button class="btn btnb" onclick="converterAtivoObj(this)"><i class="ti ti-user-check"></i> Converter para ativo</button>':'')+
   (a.s==='P'?'<button class="btn btnb" onclick="alert(\'Agendar experimental!\')"><i class="ti ti-calendar-plus"></i> Agendar experimental</button>':'')+
   '</div>');
+  // guarda referência do aluno atual
+  window._alunoAtual = a;
 }
 
-async function converterAtivo(json){
-  const a=JSON.parse(json);
+async function converterAtivoObj(){
+  const a = window._alunoAtual;
+  if(!a) return;
   if(!confirm('Converter '+a.n+' para Ativo?')) return;
   try {
-    if(a.id && typeof a.id === 'number' && a.id > 1000) {
+    if(a.id && typeof a.id==='number' && a.id>1000){
       await sbUpdate('alunos', a.id, {status:'A'});
     }
     a.s='A';
     const idx=AL.findIndex(x=>x.n===a.n); if(idx>=0) AL[idx].s='A';
     if(window._alunosDB){ const i=window._alunosDB.findIndex(x=>x.n===a.n); if(i>=0) window._alunosDB[i].s='A'; }
-    verAlunoDetalhe(JSON.stringify(a));
+    verAlunoDetalhe(a);
   } catch(e){ alert('Erro: '+e.message); }
 }
 
