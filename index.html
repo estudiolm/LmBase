@@ -187,6 +187,8 @@ select.fi{cursor:pointer}
   <button class="ni loja" onclick="nav('l_estoque')"><i class="ti ti-package"></i>Estoque</button>
   <button class="ni loja" onclick="nav('l_encomendas')"><i class="ti ti-truck-delivery"></i>Encomendas</button>
   <button class="ni loja" onclick="nav('l_clientes')"><i class="ti ti-users"></i>Clientes</button>
+  <div class="nsep">relatórios</div>
+  <button class="ni" style="border-right-color:#B8924A" onclick="nav('fin_geral')"><i class="ti ti-cash"></i>Financeiro Geral</button>
 </div>
 <div class="mn" id="mn"></div>
 </div>
@@ -708,7 +710,8 @@ function nav(p){
     p_dash:navPDash, p_alunos:navPAlunos, p_agenda:rPAgenda, p_fin:navPFin,
     f_dash:navFDash, f_pacientes:navFPacientes,
     l_dash:navLDash, l_vendas:navLVendas, l_estoque:navLEstoque,
-    l_encomendas:navLEncomendas, l_clientes:navLClientes
+    l_encomendas:navLEncomendas, l_clientes:navLClientes,
+    fin_geral:rFinGeral
   };
   if(fn[p]) fn[p]();
 }
@@ -1375,6 +1378,183 @@ function abrirTroca(nome,horario){
   '<label class="fl">Motivo</label><input class="fi" placeholder="Consulta, viagem…">'+
   '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button>'+
   '<button class="btn btnb" onclick="alert(\'Troca solicitada!\');fecharModal()">Salvar</button></div>');
+}
+
+// ═══════════════════════════════════════════════════════════
+// FINANCEIRO GERAL — Pilates + Fisio + Loja
+// ═══════════════════════════════════════════════════════════
+async function rFinGeral(){
+  set('<div class="pt">Financeiro Geral</div><div class="ps">Consolidado de todas as receitas — Pilates · Fisioterapia · Loja</div>'+
+  '<div style="display:flex;align-items:center;justify-content:center;height:200px;flex-direction:column;gap:10px;color:#7A5230">'+
+  '<div style="width:28px;height:28px;border:3px solid #EDE0CC;border-top-color:#B8924A;border-radius:50%;animation:spin 0.8s linear infinite"></div>'+
+  '<span style="font-size:12px">Consolidando dados…</span></div>');
+
+  // Busca pagamentos do banco em paralelo com dados locais
+  let pagsBanco = [];
+  try { pagsBanco = await sbGet('pagamentos','criado_em'); } catch(e){}
+  let vendasBanco = [];
+  try { vendasBanco = await sbGet('vendas','criado_em'); } catch(e){}
+
+  // ── PILATES ──────────────────────────────────────────────
+  const ativos = AL.filter(a=>a.s==='A');
+  const recMensal = ativos.reduce((s,a)=>s+(parseFloat(a.v)||0),0);
+  const vMaio = ativos.filter(a=>{if(!a.px||a.px==='parceria')return false;const p=(a.px||'').split('/');return parseInt(p[1])===5;});
+  const vJun  = ativos.filter(a=>{if(!a.px||a.px==='parceria')return false;const p=(a.px||'').split('/');return parseInt(p[1])===6;});
+  const semData = ativos.filter(a=>!a.px||a.px==='parceria').length;
+
+  // Distribuição por plano
+  const porPlano={};
+  ativos.forEach(a=>{
+    const pl=(a.pl||'—').split(' ').slice(0,2).join(' ');
+    if(!porPlano[pl]) porPlano[pl]={n:0,rec:0};
+    porPlano[pl].n++; porPlano[pl].rec+=(parseFloat(a.v)||0);
+  });
+  const planosTop=Object.entries(porPlano).sort((a,b)=>b[1].rec-a[1].rec);
+
+  // Pagamentos registrados no banco
+  const pagReg = pagsBanco.length;
+  const pagTotal = pagsBanco.reduce((s,p)=>s+(parseFloat(p.valor)||0),0);
+
+  // ── FISIOTERAPIA ─────────────────────────────────────────
+  const PRECO_SESSAO = 120; // valor médio estimado por sessão
+  const totalSessoes = FISIO.reduce((s,p)=>s+p.realizadas,0);
+  const recFisio = totalSessoes * PRECO_SESSAO;
+  const pacConc = FISIO.filter(p=>p.sessoes&&p.realizadas>=p.sessoes).length;
+
+  // ── LOJA ─────────────────────────────────────────────────
+  // Mescla banco + locais
+  const dbVIds = new Set(vendasBanco.map(r=>r.id));
+  const todasVendas = [
+    ...vendasBanco.map(r=>({item:r.item,marca:r.marca,preco:parseFloat(r.preco)||0,custo:parseFloat(r.custo)||0,data:r.data_venda})),
+    ...VENDAS.filter(v=>!dbVIds.has(v.id)).map(v=>({item:v.item,marca:v.marca,preco:parseFloat(v.preco)||0,custo:parseFloat(v.custo)||0,data:v.data}))
+  ];
+  const recLoja = todasVendas.reduce((s,v)=>s+v.preco,0);
+  const custoLoja = todasVendas.filter(v=>v.custo>0).reduce((s,v)=>s+v.custo,0);
+  const margemLoja = custoLoja>0?((recLoja-custoLoja)/recLoja*100):null;
+
+  const recEnc = ENCOMENDAS.filter(e=>e.vf).reduce((s,e)=>s+(parseFloat(e.vf)||0),0);
+  const encPend = ENCOMENDAS.filter(e=>!e.vf).length;
+
+  // Por marca
+  const porMarca={};
+  todasVendas.forEach(v=>{const m=v.marca||'Outras';if(!porMarca[m])porMarca[m]=0;porMarca[m]+=v.preco;});
+  const marcasTop=Object.entries(porMarca).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const maxM=marcasTop[0]?marcasTop[0][1]:1;
+
+  // ── TOTAL GERAL ───────────────────────────────────────────
+  const totalGeral = recMensal + recFisio + recLoja + recEnc;
+  const maxBar = Math.max(recMensal, recFisio, recLoja+recEnc);
+
+  function barraH(val, max, cor){
+    const pct = Math.round(val/max*100);
+    return `<div style="height:8px;border-radius:4px;background:#EDE0CC;margin-top:4px"><div style="width:${pct}%;height:100%;border-radius:4px;background:${cor}"></div></div>`;
+  }
+
+  set(
+  '<div class="pt">Financeiro Geral</div>'+
+  '<div class="ps">Consolidado de todas as receitas — Pilates · Fisioterapia · Loja</div>'+
+
+  // ── TOTAIS ────────────────────────────────────────────────
+  '<div style="background:#FDF8F2;border:.5px solid rgba(184,146,74,.3);border-radius:14px;padding:18px;margin-bottom:16px;display:flex;align-items:center;gap:20px">'+
+  '<div style="flex:1"><div style="font-size:11px;color:#7A5230;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Receita total estimada/mês</div>'+
+  '<div style="font-size:32px;font-weight:700;color:#B8924A">R$ '+Math.round(recMensal+recFisio).toLocaleString('pt-BR')+'</div>'+
+  '<div style="font-size:11px;color:#7A5230;margin-top:2px">Pilates + Fisioterapia (recorrente)</div></div>'+
+  '<div style="text-align:right"><div style="font-size:11px;color:#7A5230;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Loja (acumulado)</div>'+
+  '<div style="font-size:20px;font-weight:700;color:#7A5230">R$ '+Math.round(recLoja+recEnc).toLocaleString('pt-BR')+'</div>'+
+  '<div style="font-size:11px;color:#7A5230;margin-top:2px">Vendas + encomendas recebidas</div></div>'+
+  '</div>'+
+
+  // ── 3 BLOCOS ──────────────────────────────────────────────
+  '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px">'+
+
+  // PILATES
+  '<div style="background:#FDF8F2;border:.5px solid rgba(184,146,74,.25);border-radius:12px;padding:14px">'+
+  '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'+
+  '<div style="width:32px;height:32px;border-radius:8px;background:#B8924A22;display:flex;align-items:center;justify-content:center">'+
+  '<i class="ti ti-yoga" style="font-size:16px;color:#B8924A"></i></div>'+
+  '<div style="font-size:13px;font-weight:600;color:#4A2E1A">Pilates</div></div>'+
+  '<div style="font-size:22px;font-weight:700;color:#B8924A;margin-bottom:2px">R$ '+recMensal.toLocaleString('pt-BR')+'</div>'+
+  '<div style="font-size:11px;color:#7A5230;margin-bottom:12px">estimativa mensal · '+ativos.length+' alunos ativos</div>'+
+  barraH(recMensal,maxBar,'#B8924A')+
+  '<div style="margin-top:12px;display:flex;flex-direction:column;gap:5px">'+
+  '<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:#7A5230">Vencem em maio</span><span style="font-weight:600;color:#4A2E1A">'+vMaio.length+' alunos</span></div>'+
+  '<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:#7A5230">Vencem em junho</span><span style="font-weight:600;color:#4A2E1A">'+vJun.length+' alunos</span></div>'+
+  '<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:#7A5230">Sem data cadastrada</span><span style="font-weight:600;color:#8B2E1A">'+semData+' alunos</span></div>'+
+  (pagReg>0?'<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:#7A5230">Pgtos registrados</span><span style="font-weight:600;color:#3D5C1A">'+pagReg+' · R$ '+Math.round(pagTotal).toLocaleString('pt-BR')+'</span></div>':'')+
+  '</div></div>'+
+
+  // FISIOTERAPIA
+  '<div style="background:#FDF8F2;border:.5px solid rgba(184,146,74,.25);border-radius:12px;padding:14px">'+
+  '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'+
+  '<div style="width:32px;height:32px;border-radius:8px;background:#6B7A2E22;display:flex;align-items:center;justify-content:center">'+
+  '<i class="ti ti-heart-rate-monitor" style="font-size:16px;color:#6B7A2E"></i></div>'+
+  '<div style="font-size:13px;font-weight:600;color:#4A2E1A">Fisioterapia</div></div>'+
+  '<div style="font-size:22px;font-weight:700;color:#6B7A2E;margin-bottom:2px">R$ '+recFisio.toLocaleString('pt-BR')+'</div>'+
+  '<div style="font-size:11px;color:#7A5230;margin-bottom:12px">estimado · R$ '+PRECO_SESSAO+'/sessão</div>'+
+  barraH(recFisio,maxBar,'#6B7A2E')+
+  '<div style="margin-top:12px;display:flex;flex-direction:column;gap:5px">'+
+  '<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:#7A5230">Total de sessões</span><span style="font-weight:600;color:#4A2E1A">'+totalSessoes+' sessões</span></div>'+
+  '<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:#7A5230">Pacientes ativos</span><span style="font-weight:600;color:#4A2E1A">'+FISIO.length+'</span></div>'+
+  '<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:#7A5230">Tratamentos concluídos</span><span style="font-weight:600;color:#3D5C1A">'+pacConc+'</span></div>'+
+  '<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:#7A5230">Em andamento</span><span style="font-weight:600;color:#4A2E1A">'+(FISIO.length-pacConc)+'</span></div>'+
+  '</div></div>'+
+
+  // LOJA
+  '<div style="background:#FDF8F2;border:.5px solid rgba(184,146,74,.25);border-radius:12px;padding:14px">'+
+  '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'+
+  '<div style="width:32px;height:32px;border-radius:8px;background:#7A523022;display:flex;align-items:center;justify-content:center">'+
+  '<i class="ti ti-shirt" style="font-size:16px;color:#7A5230"></i></div>'+
+  '<div style="font-size:13px;font-weight:600;color:#4A2E1A">Loja</div></div>'+
+  '<div style="font-size:22px;font-weight:700;color:#7A5230;margin-bottom:2px">R$ '+Math.round(recLoja).toLocaleString('pt-BR')+'</div>'+
+  '<div style="font-size:11px;color:#7A5230;margin-bottom:12px">'+todasVendas.length+' itens vendidos</div>'+
+  barraH(recLoja+recEnc,maxBar,'#7A5230')+
+  '<div style="margin-top:12px;display:flex;flex-direction:column;gap:5px">'+
+  '<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:#7A5230">Encomendas recebidas</span><span style="font-weight:600;color:#3D5C1A">R$ '+Math.round(recEnc).toLocaleString('pt-BR')+'</span></div>'+
+  '<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:#7A5230">Encomendas pendentes</span><span style="font-weight:600;color:#8B6914">'+encPend+' pedidos</span></div>'+
+  (margemLoja?'<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:#7A5230">Margem estimada</span><span style="font-weight:600;color:#3D5C1A">'+margemLoja.toFixed(1)+'%</span></div>':'')+
+  '</div></div>'+
+  '</div>'+
+
+  // ── VENCIMENTOS PILATES ───────────────────────────────────
+  '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'+
+
+  // Tabela vencimentos
+  '<div><div style="font-size:11px;font-weight:600;color:#B8924A;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Próximos vencimentos</div>'+
+  '<div class="tw"><table><thead><tr><th>Aluno</th><th>Plano</th><th>Vence</th><th>Valor</th></tr></thead><tbody>'+
+  [...vMaio,...vJun].sort((a,b)=>{
+    const[da,ma]=(a.px||'').split('/').map(Number);
+    const[db,mb]=(b.px||'').split('/').map(Number);
+    return(ma*100+da)-(mb*100+db);
+  }).slice(0,10).map(a=>'<tr><td>'+a.n.split(' ').slice(0,2).join(' ')+'</td><td style="color:#7A5230">'+a.pl+'</td><td>'+a.px+'</td><td style="color:#B8924A;font-weight:600">R$ '+a.v+'</td></tr>').join('')+
+  '</tbody></table></div></div>'+
+
+  // Receita por plano
+  '<div><div style="font-size:11px;font-weight:600;color:#B8924A;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Receita por plano</div>'+
+  '<div class="dp" style="padding:12px">'+
+  planosTop.map(([pl,{n,rec}])=>
+    '<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">'+
+    '<span style="color:#4A2E1A">'+pl+'</span>'+
+    '<span style="color:#7A5230;font-size:11px">'+n+' alunos · <strong style="color:#B8924A">R$ '+rec.toLocaleString('pt-BR')+'</strong></span></div>'+
+    '<div style="height:6px;border-radius:3px;background:#EDE0CC"><div style="width:'+Math.round(rec/recMensal*100)+'%;height:100%;border-radius:3px;background:#B8924A"></div></div></div>'
+  ).join('')+'</div></div>'+
+  '</div>'+
+
+  // ── LOJA POR MARCA ────────────────────────────────────────
+  '<div style="font-size:11px;font-weight:600;color:#B8924A;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Faturamento loja por marca</div>'+
+  '<div class="dp" style="padding:14px;margin-bottom:16px">'+
+  marcasTop.map(([m,v])=>
+    '<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">'+
+    '<span style="color:#4A2E1A">'+m+'</span><span style="font-weight:600;color:#7A5230">R$ '+Math.round(v).toLocaleString('pt-BR')+'</span></div>'+
+    '<div style="height:6px;border-radius:3px;background:#EDE0CC"><div style="width:'+Math.round(v/maxM*100)+'%;height:100%;border-radius:3px;background:#7A5230"></div></div></div>'
+  ).join('')+'</div>'+
+
+  // ── ALUNOS SEM DATA ────────────────────────────────────────
+  (semData>0?
+  '<div style="font-size:11px;font-weight:600;color:#8B2E1A;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">⚠ Alunos sem data de vencimento</div>'+
+  '<div class="tw"><table><thead><tr><th>Aluno</th><th>Plano</th><th>Horário</th><th>Valor</th></tr></thead><tbody>'+
+  ativos.filter(a=>!a.px||a.px==='parceria').map(a=>'<tr><td>'+ncell(a)+'</td><td>'+a.pl+'</td><td style="color:#7A5230">'+(a.h||'—')+'</td><td style="color:#B8924A;font-weight:600">R$ '+a.v+'</td></tr>').join('')+
+  '</tbody></table></div>':'')
+  );
 }
 
 // ═══════════════════════════════════════════════════════════
