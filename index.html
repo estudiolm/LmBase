@@ -523,8 +523,8 @@ function buildGrade(){
 }
 const GD=buildGrade();
 
-function avcls(id){return 'a'+(id%5);}
-function ini(n){return n.split(' ').filter(Boolean).slice(0,2).map(w=>w[0]?.toUpperCase()||'').join('');}
+function avcls(id){return 'a'+(Math.abs(parseInt(id)||0)%5);}
+function ini(n){return (n||'').split(' ').filter(Boolean).slice(0,2).map(w=>w[0]?.toUpperCase()||'').join('');}
 function sbadge(s){return '<span class="bdg '+(SL_BADGE[s]||'bx')+'">'+(SL_STATUS[s]||s)+'</span>';}
 function fR(v){return v!=null?'R$ '+parseFloat(v).toFixed(2).replace('.',','):'—';}
 function qtdN(q){if(typeof q==='number')return q;const m=String(q||0).match(/\d+/g);return m?m.reduce((s,n)=>s+parseInt(n),0):0;}
@@ -759,15 +759,25 @@ function renderPDash(dados, offline){
 
 // ── PILATES ALUNOS ────────────────────────────────────────
 async function navPAlunos(){
-  window._alunosDB = AL;
-  renderPAlunos();
   try {
+    window._alunosDB = AL;
+    renderPAlunos();
     const rows = await sbGet('alunos','nome');
     const dbIds = new Set(rows.map(r=>r.id));
-    const dbMapped = rows.map(r=>({id:r.id,s:r.status,n:r.nome,tel:r.telefone,pl:r.plano,h:r.horario||'—',v:parseFloat(r.valor)||0,pg:r.ultimo_pagto,px:r.prox_vencto}));
-    window._alunosDB = rows.length > 0 ? [...dbMapped, ...AL.filter(a=>!dbIds.has(a.id))] : AL;
+    const dbMapped = rows.map(r=>({
+      id:r.id, s:r.status, n:r.nome, tel:r.telefone,
+      pl:r.plano, h:r.horario||'—', v:parseFloat(r.valor)||0,
+      pg:r.ultimo_pagto, px:r.prox_vencto
+    }));
+    window._alunosDB = rows.length > 0
+      ? [...dbMapped, ...AL.filter(a=>!dbIds.has(a.id))]
+      : AL;
     renderPAlunos();
-  } catch(e){ console.warn('Supabase alunos:', e.message); }
+  } catch(e){
+    console.warn('navPAlunos:', e.message);
+    window._alunosDB = AL;
+    renderPAlunos();
+  }
 }
 
 function renderPAlunos(){
@@ -1575,7 +1585,7 @@ function set(h){document.getElementById('mn').innerHTML=h;}
 function mc(lb,cor,vl,s2){return '<div class="mc"><div class="lb">'+lb+'</div><div class="vl '+cor+'">'+vl+'</div><div class="s2">'+s2+'</div></div>';}
 function fs(n,cor,lb){return '<div class="fs"><div class="fn" style="color:'+cor+'">'+n+'</div><div class="fl">'+lb+'</div></div>';}
 function dr(lb,val){return '<div class="dr"><span class="dl">'+lb+'</span><span>'+val+'</span></div>';}
-function ncell(a){return '<span style="display:flex;align-items:center"><span class="av '+avcls(a.id||0)+'">'+ini(a.n)+'</span>'+a.n+'</span>';}
+function ncell(a){const id=a&&a.id?a.id:0;const n=a&&a.n?a.n:'?';return '<span style="display:flex;align-items:center"><span class="av '+avcls(id)+'">'+ini(n)+'</span>'+n+'</span>';}
 function esc(s){return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');}
 
 nav('home');
