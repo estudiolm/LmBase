@@ -610,9 +610,14 @@ function rHome(){
   set(
   '<div style="max-width:700px">'+
 
-  // Boas vindas
-  '<div style="display:flex;align-items:center;gap:16px;margin-bottom:28px">'+
-  '<div style="font-size:28px;font-weight:600;color:#4A2E1A;line-height:1.2">Olá, bem-vinda! 👋</div>'+
+  // Data e hora ao vivo
+  '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:28px">'+
+  '<div>'+
+  '<div style="font-size:15px;font-weight:600;color:#4A2E1A" id="relogio">--:--:--</div>'+
+  '<div style="font-size:12px;color:#7A5230;margin-top:2px" id="dataHoje"></div>'+
+  '</div>'+
+  '<div style="text-align:right"><div style="font-size:11px;color:#B8924A;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Lm Estudio</div>'+
+  '<div style="font-size:11px;color:#7A5230">Sistema de Gestão</div></div>'+
   '</div>'+
 
   // Cards de resumo rápido
@@ -656,6 +661,24 @@ function rHome(){
   '</div>'+
   '</div>'
   );
+  // Inicia relógio ao vivo
+  atualizarRelogio();
+  if(window._clockInterval) clearInterval(window._clockInterval);
+  window._clockInterval = setInterval(atualizarRelogio, 1000);
+}
+
+function atualizarRelogio(){
+  const el = document.getElementById('relogio');
+  const de = document.getElementById('dataHoje');
+  if(!el) { clearInterval(window._clockInterval); return; }
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2,'0');
+  const m = String(now.getMinutes()).padStart(2,'0');
+  const s = String(now.getSeconds()).padStart(2,'0');
+  el.textContent = h+':'+m+':'+s;
+  const dias = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
+  const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+  de.textContent = dias[now.getDay()]+', '+now.getDate()+' de '+meses[now.getMonth()]+' de '+now.getFullYear();
 }
 
 function atalho(icon, titulo, desc, page, cor){
