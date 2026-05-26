@@ -599,23 +599,29 @@ function nav(p){
 
 // ── PILATES DASH ─────────────────────────────────────────
 async function navPDash(){
-  loading('Carregando dashboard…');
+  // Mostra dados locais IMEDIATAMENTE, sem esperar o banco
+  renderPDash(AL, 'carregando');
   try {
     const rows = await sbGet('alunos','id');
     const dbIds = new Set(rows.map(r=>r.id));
     const dbMapped = rows.map(r=>({id:r.id,s:r.status,n:r.nome,tel:r.telefone,pl:r.plano,h:r.horario||'—',v:parseFloat(r.valor)||0,pg:r.ultimo_pagto,px:r.prox_vencto}));
     const merged = rows.length > 0 ? [...dbMapped, ...AL.filter(a=>!dbIds.has(a.id))] : AL;
-    renderPDash(merged);
-  } catch(e){ renderPDash(AL, true); }
+    renderPDash(merged, false);
+  } catch(e){
+    console.warn('Supabase:', e.message);
+    renderPDash(AL, true);
+  }
 }
 
 function renderPDash(dados, offline){
   const at=dados.filter(a=>a.s==='A'), pr=dados.filter(a=>a.s==='P'), ex=dados.filter(a=>a.s==='E'), av2=dados.filter(a=>a.s==='AV');
   const rec=at.reduce((s,a)=>s+(parseFloat(a.v)||0),0);
   const vMaio=at.filter(a=>{if(!a.px||a.px==='parceria')return false;const p=(a.px||'').split('/');return parseInt(p[1])===5;});
-  const status = offline
-    ? '<span style="color:#d97706;font-weight:500">⚠ offline — dados locais</span>'
-    : '<span style="color:#16a34a;font-weight:500">● banco conectado</span>';
+  const status = offline==='carregando'
+    ? '<span style="color:#888">⏳ sincronizando banco…</span>'
+    : offline
+      ? '<span style="color:#d97706;font-weight:500">⚠ sem conexão — dados locais</span>'
+      : '<span style="color:#16a34a;font-weight:500">● banco conectado</span>';
   set('<div class="pt">Pilates — Dashboard</div><div class="ps">LM Studio · '+status+'</div>'+
   '<div class="metrics">'+
   mc('Alunos ativos','vg',at.length,'+ '+av2.length+' avulsos')+
@@ -634,14 +640,15 @@ function renderPDash(dados, offline){
 
 // ── PILATES ALUNOS ────────────────────────────────────────
 async function navPAlunos(){
-  loading('Carregando alunos…');
+  window._alunosDB = AL;
+  renderPAlunos();
   try {
     const rows = await sbGet('alunos','nome');
     const dbIds = new Set(rows.map(r=>r.id));
     const dbMapped = rows.map(r=>({id:r.id,s:r.status,n:r.nome,tel:r.telefone,pl:r.plano,h:r.horario||'—',v:parseFloat(r.valor)||0,pg:r.ultimo_pagto,px:r.prox_vencto}));
     window._alunosDB = rows.length > 0 ? [...dbMapped, ...AL.filter(a=>!dbIds.has(a.id))] : AL;
     renderPAlunos();
-  } catch(e){ window._alunosDB = AL; renderPAlunos(); }
+  } catch(e){ console.warn('Supabase alunos:', e.message); }
 }
 
 function renderPAlunos(){
@@ -693,14 +700,14 @@ async function converterAtivo(json){
 
 // ── PILATES FIN ───────────────────────────────────────────
 async function navPFin(){
-  loading('Carregando financeiro…');
+  renderPFin(AL.filter(a=>a.s==='A'), []);
   try {
     const [alRows, pgRows] = await Promise.all([sbGet('alunos','nome'), sbGet('pagamentos','criado_em')]);
     const dbIds = new Set(alRows.map(r=>r.id));
     const dbMapped = alRows.filter(r=>r.status==='A').map(r=>({id:r.id,s:r.status,n:r.nome,pl:r.plano,h:r.horario||'—',v:parseFloat(r.valor)||0,pg:r.ultimo_pagto,px:r.prox_vencto}));
     const at = alRows.length > 0 ? [...dbMapped, ...AL.filter(a=>a.s==='A'&&!dbIds.has(a.id))] : AL.filter(a=>a.s==='A');
     renderPFin(at, pgRows);
-  } catch(e){ renderPFin(AL.filter(a=>a.s==='A'), []); }
+  } catch(e){ console.warn('Supabase fin:', e.message); }
 }
 
 function renderPFin(at, pags){
@@ -724,14 +731,12 @@ function renderPFin(at, pags){
 
 // ── FISIO ─────────────────────────────────────────────────
 async function navFDash(){
-  loading('Carregando fisioterapia…');
+  renderFDash(FISIO);
   try {
     const rows = await sbGet('pacientes_fisio','nome');
-    const merged = rows.length > 0
-      ? rows.map(r=>({id:r.id,n:r.nome,sessoes:r.sessoes_contratadas,realizadas:r.sessoes_realizadas||0,datas:[]}))
-      : FISIO;
+    const merged = rows.length > 0 ? rows.map(r=>({id:r.id,n:r.nome,sessoes:r.sessoes_contratadas,realizadas:r.sessoes_realizadas||0,datas:[]})) : FISIO;
     renderFDash(merged);
-  } catch(e){ renderFDash(FISIO); }
+  } catch(e){ console.warn('Supabase fisio:', e.message); }
 }
 
 function renderFDash(dados){
@@ -752,15 +757,14 @@ function renderFDash(dados){
 }
 
 async function navFPacientes(){
-  loading('Carregando pacientes…');
+  window._fisioCache = FISIO;
+  renderFPacientes(FISIO);
   try {
     const rows = await sbGet('pacientes_fisio','nome');
-    const merged = rows.length > 0
-      ? rows.map(r=>({id:r.id,n:r.nome,sessoes:r.sessoes_contratadas,realizadas:r.sessoes_realizadas||0,datas:[]}))
-      : FISIO;
+    const merged = rows.length > 0 ? rows.map(r=>({id:r.id,n:r.nome,sessoes:r.sessoes_contratadas,realizadas:r.sessoes_realizadas||0,datas:[]})) : FISIO;
     window._fisioCache = merged;
     renderFPacientes(merged);
-  } catch(e){ window._fisioCache = FISIO; renderFPacientes(FISIO); }
+  } catch(e){ console.warn('Supabase pacientes:', e.message); }
 }
 
 function renderFPacientes(dados){
@@ -780,7 +784,8 @@ function renderFPacientes(dados){
 
 // ── LOJA ──────────────────────────────────────────────────
 async function navLDash(){
-  loading('Carregando loja…');
+  window._lojaCache={v:VENDAS,e:ESTOQUE,enc:ENCOMENDAS};
+  renderLDash(VENDAS, ESTOQUE, ENCOMENDAS);
   try {
     const [vRows, eRows, encRows] = await Promise.all([sbGet('vendas','criado_em'), sbGet('estoque','item'), sbGet('encomendas','criado_em')]);
     const dbVIds = new Set(vRows.map(r=>r.id));
@@ -791,7 +796,7 @@ async function navLDash(){
     const allEnc = encRows.length > 0 ? [...encRows.map(r=>({id:r.id,item:r.item,tam:r.tamanho,custo:r.custo,preco:r.preco_tabela,pgto:r.forma_pgto,vf:r.valor_final,cliente:r.cliente,data:r.data_pedido||'—'})), ...ENCOMENDAS.filter(e=>!dbEncIds.has(e.id))] : ENCOMENDAS;
     window._lojaCache={v:allV,e:allE,enc:allEnc};
     renderLDash(allV, allE, allEnc);
-  } catch(e){ window._lojaCache={v:VENDAS,e:ESTOQUE,enc:ENCOMENDAS}; renderLDash(VENDAS, ESTOQUE, ENCOMENDAS); }
+  } catch(e){ console.warn('Supabase loja:', e.message); }
 }
 
 function renderLDash(allV, allE, allEnc){
@@ -825,14 +830,15 @@ function renderLDash(allV, allE, allEnc){
 }
 
 async function navLVendas(){
-  loading('Carregando vendas…');
+  window._vendasCache = VENDAS;
+  renderLVendas(VENDAS);
   try {
     const rows = await sbGet('vendas','criado_em');
     const dbIds = new Set(rows.map(r=>r.id));
     const all = rows.length > 0 ? [...rows.map(r=>({id:r.id,item:r.item,marca:r.marca,custo:r.custo,preco:r.preco,cliente:r.cliente,data:r.data_venda||'—',pgto:r.forma_pgto||'—'})), ...VENDAS.filter(v=>!dbIds.has(v.id))] : VENDAS;
     window._vendasCache = all;
     renderLVendas(all);
-  } catch(e){ window._vendasCache = VENDAS; renderLVendas(VENDAS); }
+  } catch(e){ console.warn('Supabase vendas:', e.message); }
 }
 
 function renderLVendas(all){
@@ -853,14 +859,15 @@ function renderLVendas(all){
 }
 
 async function navLEstoque(){
-  loading('Carregando estoque…');
+  window._estoqueCache = ESTOQUE;
+  renderLEstoque(ESTOQUE);
   try {
     const rows = await sbGet('estoque','item');
     const dbItems = new Set(rows.map(r=>r.item));
     const all = rows.length > 0 ? [...rows.map(r=>({id:r.id,item:r.item,tam:r.tamanho,qtd:r.quantidade})), ...ESTOQUE.filter(e=>!dbItems.has(e.item))] : ESTOQUE;
     window._estoqueCache = all;
     renderLEstoque(all);
-  } catch(e){ window._estoqueCache = ESTOQUE; renderLEstoque(ESTOQUE); }
+  } catch(e){ console.warn('Supabase estoque:', e.message); }
 }
 
 function renderLEstoque(all){
@@ -879,14 +886,15 @@ function renderLEstoque(all){
 }
 
 async function navLEncomendas(){
-  loading('Carregando encomendas…');
+  window._encCache = ENCOMENDAS;
+  renderLEncomendas(ENCOMENDAS);
   try {
     const rows = await sbGet('encomendas','criado_em');
     const dbIds = new Set(rows.map(r=>r.id));
     const all = rows.length > 0 ? [...rows.map(r=>({id:r.id,item:r.item,tam:r.tamanho,custo:r.custo,preco:r.preco_tabela,pgto:r.forma_pgto,vf:r.valor_final,cliente:r.cliente,data:r.data_pedido||'—'})), ...ENCOMENDAS.filter(e=>!dbIds.has(e.id))] : ENCOMENDAS;
     window._encCache = all;
     renderLEncomendas(all);
-  } catch(e){ window._encCache = ENCOMENDAS; renderLEncomendas(ENCOMENDAS); }
+  } catch(e){ console.warn('Supabase enc:', e.message); }
 }
 
 function renderLEncomendas(all){
@@ -1252,6 +1260,16 @@ function abrirTroca(nome,horario){
   '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button>'+
   '<button class="btn btnb" onclick="alert(\'Troca solicitada!\');fecharModal()">Salvar</button></div>');
 }
+
+// ═══════════════════════════════════════════════════════════
+// UTILITÁRIOS
+// ═══════════════════════════════════════════════════════════
+function set(h){document.getElementById('mn').innerHTML=h;}
+function mc(lb,cor,vl,s2){return '<div class="mc"><div class="lb">'+lb+'</div><div class="vl '+cor+'">'+vl+'</div><div class="s2">'+s2+'</div></div>';}
+function fs(n,cor,lb){return '<div class="fs"><div class="fn" style="color:'+cor+'">'+n+'</div><div class="fl">'+lb+'</div></div>';}
+function dr(lb,val){return '<div class="dr"><span class="dl">'+lb+'</span><span>'+val+'</span></div>';}
+function ncell(a){return '<span style="display:flex;align-items:center"><span class="av '+avcls(a.id||0)+'">'+ini(a.n)+'</span>'+a.n+'</span>';}
+function esc(s){return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');}
 
 nav('p_dash');
 </script>
