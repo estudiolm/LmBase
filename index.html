@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 /* ═══════════════════════════════════════════════════════════
    LM ESTUDIO — LUXURY DESIGN SYSTEM
@@ -672,6 +673,64 @@ select.fi { cursor: pointer; }
 .acesso-negado i { font-size: 48px; color: rgba(184,146,74,.3); }
 .acesso-negado h3 { font-family: var(--font-serif); font-size: 22px; color: var(--brown); }
 
+/* ── GOOGLE CALENDAR ──────────────────────────────────────── */
+.gcal-connect {
+  margin: 8px 12px;
+  padding: 8px 12px;
+  background: rgba(201,169,110,.08);
+  border: 1px dashed rgba(201,169,110,.3);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; color: rgba(61,92,58,.7);
+}
+.gcal-connect:hover { background: rgba(201,169,110,.15); }
+.gcal-connected {
+  margin: 8px 12px;
+  padding: 8px 12px;
+  background: rgba(61,92,58,.08);
+  border: 1px solid rgba(61,92,58,.2);
+  border-radius: 10px;
+  font-size: 11px; color: #3D5C3A;
+  display: flex; align-items: center; gap: 8px;
+}
+.cal-event {
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  display: flex; align-items: flex-start; gap: 12px;
+  transition: var(--transition);
+  box-shadow: var(--shadow-sm);
+}
+.cal-event:hover { box-shadow: var(--shadow-md); transform: translateX(2px); }
+.cal-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  margin-top: 4px; flex-shrink: 0;
+}
+.cal-time { font-size: 11px; color: var(--brown-light); white-space: nowrap; min-width: 80px; }
+.cal-title { font-size: 13px; font-weight: 500; color: var(--brown); }
+.cal-desc { font-size: 11px; color: var(--brown-light); margin-top: 2px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 4px; margin-bottom: 16px; }
+.cal-day-header { text-align:center; font-size:10px; font-weight:600; color:var(--brown-light); text-transform:uppercase; letter-spacing:.06em; padding:6px 0; }
+.cal-day {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  display: flex; flex-direction:column; align-items:center; justify-content:center;
+  font-size: 12px; cursor: pointer;
+  transition: var(--transition);
+  position: relative;
+  padding: 4px;
+}
+.cal-day:hover { background: rgba(201,169,110,.1); }
+.cal-day.today { background: var(--gold); color: white; font-weight:600; }
+.cal-day.has-event::after { content:''; width:4px; height:4px; border-radius:50%; background:var(--gold-dark); position:absolute; bottom:3px; }
+.cal-day.today::after { background: white; }
+.cal-day.other-month { opacity: .3; }
+.cal-nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+
 .mn > * { animation: fadeIn .25s ease forwards; }
 </style>
 </head>
@@ -720,6 +779,13 @@ select.fi { cursor: pointer; }
   <div class="nsep" id="sepRelatorios">relatórios</div>
   <button class="ni" id="btnFinGeral" style="border-left-color:#B8924A" onclick="nav('fin_geral')"><i class="ti ti-cash"></i>Financeiro Geral</button>
   <button class="ni" id="btnLogs" style="border-left-color:#3D5C3A" onclick="nav('logs')"><i class="ti ti-history"></i>Histórico</button>
+
+  <div class="nsep">google agenda</div>
+  <div id="gcalStatus" class="gcal-connect" onclick="conectarGoogle()">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+    <span id="gcalStatusText">Conectar Google Agenda</span>
+  </div>
+  <button class="ni" id="btnAgenda" style="display:none;border-left-color:#4285F4" onclick="nav('gcal')"><i class="ti ti-calendar-event"></i>Minha Agenda</button>
 
   <!-- badge do usuário no rodapé da sidebar -->
   <div style="margin-top:auto;padding:14px 16px;border-top:1px solid rgba(184,146,74,.15)">
@@ -906,6 +972,299 @@ window.addEventListener('DOMContentLoaded', ()=>{
     if(sbImg) document.getElementById('loginLogo').src = sbImg.src;
   }, 100);
 });
+
+// ═══════════════════════════════════════════════════════════
+// GOOGLE CALENDAR INTEGRATION
+// ═══════════════════════════════════════════════════════════
+const GCAL_CLIENT_ID = '640108150020-jfo20a6t15rg0dnbf168tb721o0bgv3j.apps.googleusercontent.com';
+const GCAL_SCOPES = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events';
+
+let gcalToken = null;
+let gcalClient = null;
+
+function conectarGoogle(){
+  if(gcalToken){ nav('gcal'); return; }
+  gcalClient = google.accounts.oauth2.initTokenClient({
+    client_id: GCAL_CLIENT_ID,
+    scope: GCAL_SCOPES,
+    callback: async (resp) => {
+      if(resp.error){ alert('Erro ao conectar: '+resp.error); return; }
+      gcalToken = resp.access_token;
+      // Atualiza UI
+      const status = document.getElementById('gcalStatus');
+      const btnAg  = document.getElementById('btnAgenda');
+      if(status){
+        status.className = 'gcal-connected';
+        status.onclick = ()=>nav('gcal');
+        document.getElementById('gcalStatusText').textContent = 'Agenda conectada ✓';
+      }
+      if(btnAg) btnAg.style.display = '';
+      await registrarLog('conectou Google Agenda', 'sistema', 'Integração Google Calendar ativada');
+      nav('gcal');
+    }
+  });
+  gcalClient.requestAccessToken();
+}
+
+async function gcalRequest(url){
+  if(!gcalToken) throw new Error('Não autenticado');
+  const r = await fetch(url, { headers:{ Authorization:'Bearer '+gcalToken } });
+  if(r.status===401){ gcalToken=null; throw new Error('Token expirado — reconecte'); }
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function gcalPost(url, body){
+  if(!gcalToken) throw new Error('Não autenticado');
+  const r = await fetch(url, {
+    method:'POST',
+    headers:{ Authorization:'Bearer '+gcalToken, 'Content-Type':'application/json' },
+    body: JSON.stringify(body)
+  });
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+// Busca calendários do usuário
+async function gcalListCalendars(){
+  const d = await gcalRequest('https://www.googleapis.com/calendar/v3/users/me/calendarList');
+  return d.items||[];
+}
+
+// Busca eventos de um período
+async function gcalListEvents(calId='primary', timeMin, timeMax){
+  const min = timeMin || new Date(new Date().setHours(0,0,0,0)).toISOString();
+  const max = timeMax || new Date(new Date().setDate(new Date().getDate()+30)).toISOString();
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events`+
+    `?timeMin=${min}&timeMax=${max}&singleEvents=true&orderBy=startTime&maxResults=100`;
+  const d = await gcalRequest(url);
+  return d.items||[];
+}
+
+// Cria evento no Google Agenda
+async function gcalCreateEvent(calId='primary', event){
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events`;
+  return gcalPost(url, event);
+}
+
+// ── PÁGINA GOOGLE AGENDA ─────────────────────────────────
+let gcalSelectedCal = 'primary';
+let gcalViewDate = new Date();
+let gcalEvents = [];
+let gcalCals = [];
+
+async function rGcal(){
+  if(!gcalToken){
+    set('<div class="acesso-negado">'+
+      '<i class="ti ti-calendar-off"></i>'+
+      '<h3>Google Agenda não conectada</h3>'+
+      '<p style="font-size:13px;color:var(--brown-light);margin-bottom:16px">Conecte sua conta Google para ver e gerenciar eventos.</p>'+
+      '<button class="btn btnb" onclick="conectarGoogle()">'+
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;margin-right:6px"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#fff"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#fff"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#fff"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#fff"/></svg>'+
+      'Conectar Google Agenda</button>'+
+    '</div>');
+    return;
+  }
+
+  set('<div class="pt">Google Agenda</div><div class="ps">Sincronizado com sua conta Google</div>'+
+    '<div style="display:flex;align-items:center;justify-content:center;height:200px;flex-direction:column;gap:10px;color:var(--brown-light)">'+
+    '<div style="width:28px;height:28px;border:3px solid var(--cream-dark);border-top-color:#4285F4;border-radius:50%;animation:spin .8s linear infinite"></div>'+
+    '<span>Carregando eventos…</span></div>');
+
+  try {
+    // Busca calendários
+    gcalCals = await gcalListCalendars();
+    // Busca eventos dos próximos 30 dias
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const fim  = new Date(hoje); fim.setDate(fim.getDate()+30);
+    gcalEvents = await gcalListEvents(gcalSelectedCal, hoje.toISOString(), fim.toISOString());
+    renderGcal();
+  } catch(e){
+    set('<div class="acesso-negado"><i class="ti ti-alert-circle"></i><h3>Erro ao carregar</h3>'+
+      '<p style="font-size:13px;color:var(--brown-light)">'+e.message+'</p>'+
+      '<button class="btn btnb" onclick="rGcal()" style="margin-top:12px">Tentar novamente</button></div>');
+  }
+}
+
+function renderGcal(){
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const diasSem = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+  // Monta calendário do mês
+  const ano = gcalViewDate.getFullYear();
+  const mes = gcalViewDate.getMonth();
+  const primeiroDia = new Date(ano, mes, 1);
+  const ultimoDia   = new Date(ano, mes+1, 0);
+  const offset = primeiroDia.getDay();
+
+  // Dias com eventos
+  const diasComEvento = new Set(gcalEvents.map(e=>{
+    const d = e.start?.dateTime||e.start?.date;
+    return d ? new Date(d).toDateString() : null;
+  }).filter(Boolean));
+
+  // Próximos eventos (lista)
+  const proximos = gcalEvents.slice(0,15);
+
+  // Seletor de calendário
+  const calOpts = gcalCals.map(c=>
+    `<option value="${c.id}" ${c.id===gcalSelectedCal?'selected':''}>${c.summary}</option>`
+  ).join('');
+
+  set(
+    '<div class="pt">Google Agenda</div>'+
+    '<div class="ps">Sincronizado com sua conta Google · '+gcalEvents.length+' eventos nos próximos 30 dias</div>'+
+
+    '<div style="display:grid;grid-template-columns:280px 1fr;gap:20px;align-items:start">'+
+
+    // ── CALENDÁRIO MENSAL ──────────────────────────────────
+    '<div>'+
+    '<div class="dp" style="padding:16px">'+
+
+    // Seletor de calendário
+    '<div style="margin-bottom:12px">'+
+    '<label style="font-size:10px;font-weight:600;color:var(--brown-light);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Calendário</label>'+
+    '<select class="sel" style="width:100%;font-size:12px" onchange="gcalSelectedCal=this.value;rGcal()">'+calOpts+'</select></div>'+
+
+    // Navegação mês
+    '<div class="cal-nav">'+
+    '<button class="btn btns" onclick="gcalViewDate=new Date(gcalViewDate.getFullYear(),gcalViewDate.getMonth()-1,1);renderGcal()"><i class="ti ti-chevron-left"></i></button>'+
+    '<span style="font-size:14px;font-weight:600;color:var(--brown)">'+meses[mes]+' '+ano+'</span>'+
+    '<button class="btn btns" onclick="gcalViewDate=new Date(gcalViewDate.getFullYear(),gcalViewDate.getMonth()+1,1);renderGcal()"><i class="ti ti-chevron-right"></i></button>'+
+    '</div>'+
+
+    // Grid dias da semana
+    '<div class="cal-grid">'+
+    diasSem.map(d=>'<div class="cal-day-header">'+d+'</div>').join('')+
+
+    // Dias vazios antes do mês
+    Array(offset).fill('<div class="cal-day other-month"></div>').join('')+
+
+    // Dias do mês
+    Array.from({length:ultimoDia.getDate()},(_,i)=>{
+      const dia = i+1;
+      const data = new Date(ano,mes,dia);
+      const isHoje = data.toDateString()===hoje.toDateString();
+      const temEvento = diasComEvento.has(data.toDateString());
+      return `<div class="cal-day${isHoje?' today':''}${temEvento?' has-event':''}" onclick="gcalFiltrarDia(${ano},${mes},${dia})">${dia}</div>`;
+    }).join('')+
+    '</div>'+
+
+    // Botão novo evento
+    '<button class="btn btnb" style="width:100%;margin-top:12px;justify-content:center;display:flex;gap:8px;align-items:center" onclick="abrirNovoEvento()">'+
+    '<i class="ti ti-plus"></i> Novo evento</button>'+
+    '</div></div>'+
+
+    // ── LISTA DE EVENTOS ───────────────────────────────────
+    '<div>'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'+
+    '<div style="font-size:13px;font-weight:600;color:var(--brown)" id="gcalListTitle">Próximos 30 dias</div>'+
+    '<button class="btn btns" onclick="gcalEvents=[];gcalViewDate=new Date();rGcal()"><i class="ti ti-refresh"></i> Atualizar</button>'+
+    '</div>'+
+    '<div id="gcalEventList">'+
+    renderEventList(proximos)+
+    '</div></div>'+
+    '</div>'
+  );
+}
+
+function renderEventList(eventos){
+  if(!eventos.length) return '<div style="text-align:center;padding:32px;color:var(--brown-light)"><i class="ti ti-calendar-off" style="font-size:32px;opacity:.3;display:block;margin-bottom:8px"></i>Nenhum evento encontrado</div>';
+
+  const cores = ['#4285F4','#EA4335','#FBBC05','#34A853','#B8924A','#7A5230','#6B7A2E'];
+  return eventos.map((e,i)=>{
+    const startRaw = e.start?.dateTime||e.start?.date;
+    const endRaw   = e.end?.dateTime||e.end?.date;
+    const start = startRaw ? new Date(startRaw) : null;
+    const end   = endRaw   ? new Date(endRaw)   : null;
+    const allDay = !e.start?.dateTime;
+    const cor = e.colorId ? cores[parseInt(e.colorId)%cores.length] : cores[i%cores.length];
+
+    const dataStr = start ? start.toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short'}) : '—';
+    const horaStr = allDay ? 'Dia inteiro' :
+      (start?start.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'')+'–'+
+      (end  ?end.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'');
+
+    return '<div class="cal-event">'+
+      '<div class="cal-dot" style="background:'+cor+'"></div>'+
+      '<div style="flex:1">'+
+      '<div class="cal-title">'+e.summary+'</div>'+
+      '<div class="cal-desc">'+dataStr+' · '+horaStr+
+        (e.location?' · <i class="ti ti-map-pin" style="font-size:10px"></i> '+e.location:'')+
+        (e.description?' · '+e.description.slice(0,60):'')+'</div>'+
+      '</div>'+
+      '</div>';
+  }).join('');
+}
+
+function gcalFiltrarDia(ano, mes, dia){
+  const data = new Date(ano, mes, dia);
+  const titulo = data.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'});
+  const eventosDia = gcalEvents.filter(e=>{
+    const d = e.start?.dateTime||e.start?.date;
+    return d && new Date(d).toDateString()===data.toDateString();
+  });
+  const el = document.getElementById('gcalEventList');
+  const tit = document.getElementById('gcalListTitle');
+  if(el){ el.innerHTML = renderEventList(eventosDia); }
+  if(tit){ tit.textContent = eventosDia.length+' evento(s) em '+titulo; }
+}
+
+function abrirNovoEvento(){
+  const agora = new Date();
+  const dd = String(agora.getDate()).padStart(2,'0');
+  const mm = String(agora.getMonth()+1).padStart(2,'0');
+  const yy = agora.getFullYear();
+  const hh = String(agora.getHours()).padStart(2,'0');
+  const mi = String(agora.getMinutes()).padStart(2,'0');
+  const calOpts = gcalCals.map(c=>`<option value="${c.id}">${c.summary}</option>`).join('');
+
+  abrirModal(
+    '<div class="mdt"><i class="ti ti-calendar-plus" style="color:#4285F4;margin-right:8px"></i>Novo evento na Agenda</div>'+
+    '<label class="fl">Título *</label><input class="fi" id="ev_titulo" placeholder="Ex: Reposição Ana — QUA 08H">'+
+    '<label class="fl">Calendário</label><select class="fi" id="ev_cal">'+calOpts+'</select>'+
+    '<div class="fr2">'+
+      '<div><label class="fl">Data e hora início</label><input class="fi" id="ev_inicio" type="datetime-local" value="'+yy+'-'+mm+'-'+dd+'T'+hh+':'+mi+'"></div>'+
+      '<div><label class="fl">Data e hora fim</label><input class="fi" id="ev_fim" type="datetime-local" value="'+yy+'-'+mm+'-'+dd+'T'+hh+':'+mi+'"></div>'+
+    '</div>'+
+    '<label class="fl">Local (opcional)</label><input class="fi" id="ev_local" placeholder="Ex: Lm Estudio — Studio 1">'+
+    '<label class="fl">Descrição (opcional)</label><textarea class="fi" id="ev_desc" rows="2" placeholder="Observações, aluno, turma…" style="resize:vertical"></textarea>'+
+    '<div class="mdf">'+
+      '<button class="btn" onclick="fecharModal()">Cancelar</button>'+
+      '<button class="btn btnb" id="ev_btn" onclick="salvarEvento()"><i class="ti ti-check"></i> Criar evento</button>'+
+    '</div>'
+  );
+}
+
+async function salvarEvento(){
+  const titulo = document.getElementById('ev_titulo').value.trim();
+  if(!titulo){ alert('Informe o título do evento.'); return; }
+  const btn = document.getElementById('ev_btn');
+  btn.disabled=true; btn.textContent='Criando…';
+
+  const inicio = document.getElementById('ev_inicio').value;
+  const fim    = document.getElementById('ev_fim').value;
+  const calId  = document.getElementById('ev_cal').value||'primary';
+
+  const evento = {
+    summary: titulo,
+    location: document.getElementById('ev_local').value||undefined,
+    description: document.getElementById('ev_desc').value||undefined,
+    start: { dateTime: new Date(inicio).toISOString(), timeZone: 'America/Sao_Paulo' },
+    end:   { dateTime: new Date(fim||inicio).toISOString(), timeZone: 'America/Sao_Paulo' },
+  };
+
+  try {
+    await gcalCreateEvent(calId, evento);
+    await registrarLog('criou evento', 'google_agenda', titulo+' em '+new Date(inicio).toLocaleDateString('pt-BR'));
+    fecharModal();
+    rGcal(); // recarrega
+  } catch(e){
+    btn.disabled=false; btn.textContent='Criar evento';
+    alert('Erro ao criar evento: '+e.message);
+  }
+}
 
 // ═══════════════════════════════════════════════════════════
 // DADOS — PILATES
@@ -1425,7 +1784,8 @@ function nav(p){
     l_dash:navLDash, l_vendas:navLVendas, l_estoque:navLEstoque,
     l_encomendas:navLEncomendas, l_clientes:navLClientes,
     fin_geral:rFinGeral,
-    logs:rLogs
+    logs:rLogs,
+    gcal:rGcal
   };
   if(fn[p]) fn[p]();
 }
@@ -1994,39 +2354,192 @@ function abrirNovaEncomenda(){
 
 
 // ── AGENDA (grade local — usa dados em memória) ───────────
-function rPAgenda(){
-  let h='<div class="pt">Grade de Aulas</div><div class="ps">Horários dos alunos ativos · Cap: '+CAP+'/turma</div>'+
-  '<div style="display:flex;gap:12px;font-size:11px;margin-bottom:12px;flex-wrap:wrap">'+
-  '<span style="display:flex;gap:4px;align-items:center"><span style="width:10px;height:10px;border-radius:2px;background:#d1fae5;border:.5px solid #6ee7b7;display:inline-block"></span>Cheia</span>'+
-  '<span style="display:flex;gap:4px;align-items:center"><span style="width:10px;height:10px;border-radius:2px;background:#fef3c7;border:.5px solid #fcd34d;display:inline-block"></span>Com vaga</span>'+
-  '<span style="display:flex;gap:4px;align-items:center"><span style="width:10px;height:10px;border-radius:2px;background:#f5f5f0;border:.5px solid #ddd;display:inline-block"></span>Sem aula</span></div>'+
+// Mapeia cor do Google Calendar para tipo
+// Verde (10 = "sage", 2 = "basil") = Pilates
+// Azul (1,7,9) = Fisio
+// colorId null no calendário "Estudio Lm" = também Pilates
+function tipoEvento(ev){
+  const titulo = (ev.summary||'').toLowerCase();
+  if(titulo.startsWith('fisio') || ev.colorId==='1'||ev.colorId==='7'||ev.colorId==='9') return 'fisio';
+  return 'pilates';
+}
+
+// Converte horário do Google (ex: "2026-05-25T07:00:00-03:00") para chave da grade ("07H")
+function horaParaChave(dateTimeStr){
+  if(!dateTimeStr) return null;
+  const d = new Date(dateTimeStr);
+  return String(d.getHours()).padStart(2,'0')+'H';
+}
+
+// Converte dia da semana do Google para abreviação da grade
+function diaParaChave(dateTimeStr){
+  if(!dateTimeStr) return null;
+  const dias = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  return dias[new Date(dateTimeStr).getDay()];
+}
+
+// Extrai lista de nomes do título do evento
+// "Ana G, Araci, Paula" → ["Ana G","Araci","Paula"]
+function extrairNomes(titulo){
+  return titulo
+    .split(',')
+    .map(n=>n.trim())
+    .filter(n=>n.length>1 && !n.toLowerCase().startsWith('fisio'));
+}
+
+async function rPAgenda(){
+  // Mostra grade local imediatamente
+  renderGrade(GD, false);
+
+  // Se Google conectado, tenta sincronizar
+  if(!gcalToken){ return; }
+
+  // Atualiza indicador
+  const ps = document.querySelector('.ps');
+  if(ps) ps.innerHTML = 'Sincronizando com Google Agenda <span style="color:var(--gold-dark)">⏳</span>';
+
+  try {
+    // Busca o calendário "Estudio Lm"
+    const cals = await gcalListCalendars();
+    const estudioCal = cals.find(c=>c.summary.toLowerCase().includes('estudio')||c.summary.toLowerCase().includes('estúdio')||c.summary.toLowerCase().includes('lm'));
+    const calId = estudioCal ? estudioCal.id : 'primary';
+
+    // Pega próxima semana completa (Seg a Sáb)
+    const hoje = new Date();
+    const seg = new Date(hoje);
+    seg.setDate(hoje.getDate() - hoje.getDay() + 1); // próxima segunda
+    seg.setHours(0,0,0,0);
+    const sabado = new Date(seg);
+    sabado.setDate(seg.getDate()+6);
+    sabado.setHours(23,59,59,0);
+
+    const eventos = await gcalListEvents(calId, seg.toISOString(), sabado.toISOString());
+
+    // Monta grade a partir dos eventos
+    const gdGoogle = {};
+    DIAS.forEach(d=>HORAS.forEach(h=>gdGoogle[d+'-'+h]=[]));
+
+    const eventosFisio = [];
+
+    eventos.forEach(ev=>{
+      const tipo = tipoEvento(ev);
+      const inicio = ev.start?.dateTime||ev.start?.date;
+      if(!inicio) return;
+
+      const dia = diaParaChave(inicio);
+      const hora = horaParaChave(inicio);
+      if(!dia||!hora) return;
+
+      const chaveHora = hora; // ex: "07H"
+      const key = dia+'-'+chaveHora;
+
+      if(tipo==='pilates'){
+        const nomes = extrairNomes(ev.summary||'');
+        if(nomes.length && gdGoogle[key]!==undefined){
+          gdGoogle[key].push(...nomes);
+        } else if(gdGoogle[key]!==undefined && ev.summary){
+          // evento sem vírgula = nome único
+          gdGoogle[key].push(ev.summary.trim());
+        }
+      } else if(tipo==='fisio'){
+        eventosFisio.push({
+          nome: (ev.summary||'').replace(/fisio\s*/i,'').trim(),
+          inicio, dia, hora: chaveHora,
+          titulo: ev.summary
+        });
+      }
+    });
+
+    // Merge: para células que a Google não cobriu, usa dados da planilha
+    DIAS.forEach(d=>HORAS.forEach(h=>{
+      const key=d+'-'+h;
+      if(gdGoogle[key]===undefined) gdGoogle[key]=[];
+      if(gdGoogle[key].length===0 && GD[key] && GD[key].length>0){
+        gdGoogle[key] = [...GD[key]]; // fallback para dados da planilha
+      }
+    }));
+
+    // Guarda fisio da agenda globalmente
+    window._fisioAgenda = eventosFisio;
+
+    renderGrade(gdGoogle, true, estudioCal?.summary||'Estudio Lm', eventos.length, eventosFisio.length);
+
+  } catch(e){
+    console.warn('Google Agenda erro:', e.message);
+    renderGrade(GD, false);
+    const ps2 = document.querySelector('.ps');
+    if(ps2) ps2.innerHTML = 'Dados locais · <span style="color:#8B2E1A;font-size:11px">Google Agenda indisponível</span>';
+  }
+}
+
+function renderGrade(gradeData, fromGoogle, calNome, totalEv, totalFisio){
+  const fonte = fromGoogle
+    ? '● Google Agenda <span style="color:var(--brown-light);font-size:11px">— '+calNome+' · '+totalEv+' eventos · '+totalFisio+' fisio</span>'
+    : '● Dados da planilha <span style="color:var(--brown-light);font-size:11px">— conecte o Google para sincronizar</span>';
+
+  let h='<div class="pt">Grade de Aulas</div>'+
+  '<div class="ps">'+fonte+'</div>'+
+  '<div style="display:flex;gap:14px;font-size:11px;margin-bottom:14px;flex-wrap:wrap;align-items:center">'+
+  '<span style="display:flex;gap:5px;align-items:center"><span style="width:10px;height:10px;border-radius:2px;background:rgba(92,122,46,.15);border:1px solid rgba(92,122,46,.3);display:inline-block"></span>Turma cheia</span>'+
+  '<span style="display:flex;gap:5px;align-items:center"><span style="width:10px;height:10px;border-radius:2px;background:rgba(201,169,110,.12);border:1px solid rgba(201,169,110,.3);display:inline-block"></span>Com vaga</span>'+
+  '<span style="display:flex;gap:5px;align-items:center"><span style="width:10px;height:10px;border-radius:2px;background:var(--cream-dark);border:1px solid var(--border);display:inline-block"></span>Sem aula</span>'+
+  (fromGoogle?'<button class="btn btns" style="margin-left:auto" onclick="rPAgenda()"><i class="ti ti-refresh"></i> Atualizar da agenda</button>':
+  '<button class="btn btns btnb" style="margin-left:auto" onclick="conectarGoogle()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;margin-right:4px"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#fff"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#fff"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#fff"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#fff"/></svg> Sincronizar com Google</button>')+
+  '</div>'+
   '<div class="sg"><div class="sgh"><div>Hr</div>'+DIAS.map(d=>'<div>'+d+'</div>').join('')+'</div>';
+
   HORAS.forEach(hr=>{
     h+='<div class="sgr"><div class="stl">'+hr+'</div>';
     DIAS.forEach(d=>{
-      const k=d+'-'+hr, aula=GD[k]||[];
-      if(!aula.length){h+='<div class="sl"><div style="display:flex;align-items:center;justify-content:center;height:100%"><span class="sf">–</span></div></div>';}
-      else{
+      const key=d+'-'+hr;
+      const aula=gradeData[key]||[];
+      if(!aula.length){
+        h+='<div class="sl"><div style="display:flex;align-items:center;justify-content:center;height:100%"><span class="sf">–</span></div></div>';
+      } else {
         const fu=aula.length>=CAP;
-        h+='<div class="sl '+(fu?'sfu':'spa')+'" onclick="verTurma(\''+d+'\',\''+hr+'\')">';
-        aula.slice(0,3).forEach(nm=>h+='<span class="'+(fu?'sn':'sp')+'">'+nm+'</span>');
-        if(aula.length>3)h+='<span class="sc">+'+( aula.length-3)+'</span>';
+        h+='<div class="sl '+(fu?'sfu':'spa')+'" onclick="verTurmaGoogle(\''+d+'\',\''+hr+'\',\''+encodeURIComponent(JSON.stringify(aula))+'\')">';
+        aula.slice(0,3).forEach(nm=>h+='<span class="'+(fu?'sn':'sp')+'">'+nm.split(' ')[0]+'</span>');
+        if(aula.length>3) h+='<span class="sc">+'+( aula.length-3)+'</span>';
         else h+='<span class="sc">'+aula.length+'/'+CAP+'</span>';
         h+='</div>';
       }
     });
     h+='</div>';
   });
-  set(h+'</div>');
+
+  set(h+'</div>'+
+  // Seção Fisio da agenda
+  (fromGoogle && window._fisioAgenda && window._fisioAgenda.length ?
+    '<div style="margin-top:18px"><div style="font-size:11px;font-weight:600;color:#4285F4;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px"><i class="ti ti-heart-rate-monitor"></i> Fisioterapia esta semana — da agenda</div>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">'+
+    window._fisioAgenda.map(f=>'<div style="background:rgba(66,133,244,.06);border:1px solid rgba(66,133,244,.2);border-radius:10px;padding:10px 12px">'+
+      '<div style="font-size:13px;font-weight:500;color:var(--brown)">'+f.nome+'</div>'+
+      '<div style="font-size:11px;color:var(--brown-light);margin-top:2px">'+f.dia+' · '+f.hora+'</div></div>').join('')+
+    '</div></div>'
+  : '')
+  );
+}
+
+function verTurmaGoogle(d, hr, alunosEnc){
+  const aula = JSON.parse(decodeURIComponent(alunosEnc));
+  const livre = CAP - aula.length;
+  abrirModal(
+    '<div class="mdt">'+d+' – '+hr+'</div>'+
+    '<div style="margin-bottom:12px"><span class="bdg '+(livre===0?'bg':'ba')+'">'+aula.length+'/'+CAP+' alunos</span>'+
+    (livre>0?' <span style="font-size:11px;color:var(--gold-dark)">'+livre+' vaga(s) livre</span>':'')+
+    (gcalToken?' <span style="font-size:10px;color:rgba(66,133,244,.8)">● Google Agenda</span>':'')+
+    '</div>'+
+    aula.map(nm=>'<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;color:var(--brown)">'+nm+'</div>').join('')+
+    (livre>0?'<div style="font-size:12px;color:var(--gold-dark);margin-top:10px"><i class="ti ti-circle-check"></i> Disponível para reposição</div>':'')+
+    '<div class="mdf">'+
+    (gcalToken?'<button class="btn" onclick="fecharModal();abrirNovoEvento()"><i class="ti ti-calendar-plus"></i> Agendar reposição</button>':'')+
+    '<button class="btn btnb" onclick="fecharModal()">Fechar</button></div>'
+  );
 }
 
 function verTurma(d,hr){
-  const k=d+'-'+hr, aula=GD[k]||[], livre=CAP-aula.length;
-  abrirModal('<div class="mdt">'+d+' – '+hr+'</div>'+
-  '<div style="margin-bottom:10px"><span class="bdg '+(livre===0?'bg':'ba')+'">'+aula.length+'/'+CAP+' alunos</span>'+(livre>0?' <span style="font-size:11px;color:#16a34a">'+livre+' vaga(s) livre</span>':'')+' </div>'+
-  aula.map(nm=>'<div style="padding:5px 0;border-bottom:.5px solid rgba(0,0,0,.08);font-size:12px">'+nm+'</div>').join('')+
-  (livre>0?'<div style="font-size:11px;color:#16a34a;margin-top:8px"><i class="ti ti-circle-check"></i> Disponível para reposição</div>':'')+
-  '<div class="mdf"><button class="btn" onclick="fecharModal()">Fechar</button></div>');
+  const aula=GD[d+'-'+hr]||[], livre=CAP-aula.length;
+  verTurmaGoogle(d,hr,encodeURIComponent(JSON.stringify(aula)));
 }
 
 function verPaciente(idx){
