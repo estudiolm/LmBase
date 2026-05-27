@@ -1844,6 +1844,7 @@ function rHome(){
   const totalV=VENDAS.reduce((s,v)=>s+(parseFloat(v.preco)||0),0);
   const encPend=ENCOMENDAS.filter(e=>!e.vf).length;
   const fisioTotal=FISIO.length;
+  const permH = usuarioAtual ? (PERMISSOES[usuarioAtual.perfil]||PERMISSOES.recepcao) : PERMISSOES.admin;
 
   set(
   '<div style="max-width:700px">'+
@@ -1859,7 +1860,7 @@ function rHome(){
   '</div>'+
 
   // Cards de resumo rápido
-  '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:28px">'+
+  '<div style="display:grid;grid-template-columns:repeat('+( permH.verFinGeral?'3':'2')+',minmax(0,1fr));gap:10px;margin-bottom:28px">'+
   '<div style="background:#FDF8F2;border:.5px solid rgba(184,146,74,.25);border-radius:12px;padding:14px;border-left:3px solid #B8924A">'+
   '<div style="font-size:11px;color:#7A5230;margin-bottom:4px;font-weight:500;text-transform:uppercase;letter-spacing:.05em">Pilates</div>'+
   '<div style="font-size:22px;font-weight:600;color:#4A2E1A">'+at+'</div>'+
@@ -1870,10 +1871,12 @@ function rHome(){
   '<div style="font-size:22px;font-weight:600;color:#4A2E1A">'+fisioTotal+'</div>'+
   '<div style="font-size:11px;color:#7A5230">pacientes em tratamento</div></div>'+
 
+  (permH.verFinGeral ?
   '<div style="background:#FDF8F2;border:.5px solid rgba(184,146,74,.25);border-radius:12px;padding:14px;border-left:3px solid #7A5230">'+
   '<div style="font-size:11px;color:#7A5230;margin-bottom:4px;font-weight:500;text-transform:uppercase;letter-spacing:.05em">Loja</div>'+
   '<div style="font-size:22px;font-weight:600;color:#4A2E1A">R$ '+Math.round(totalV).toLocaleString('pt-BR')+'</div>'+
-  '<div style="font-size:11px;color:#7A5230">faturado · '+encPend+' encomenda(s) pendente</div></div>'+
+  '<div style="font-size:11px;color:#7A5230">faturado · '+encPend+' encomenda(s) pendente</div></div>'
+  : '')+
   '</div>'+
 
   // Atalhos
@@ -1983,10 +1986,11 @@ function renderPDash(dados, offline){
     : offline
       ? '<span style="color:#d97706;font-weight:500">⚠ sem conexão — dados locais</span>'
       : '<span style="color:#16a34a;font-weight:500">● banco conectado</span>';
+  const perm = usuarioAtual ? (PERMISSOES[usuarioAtual.perfil]||PERMISSOES.recepcao) : PERMISSOES.admin;
   set('<div class="pt">Pilates — Dashboard</div><div class="ps">Lm Estudio · '+status+'</div>'+
   '<div class="metrics">'+
   mc('Alunos ativos','vg',at.length,'+ '+av2.length+' avulsos')+
-  mc('Receita estimada/mês','vg','R$ '+rec.toLocaleString('pt-BR'),'planos ativos')+
+  (perm.verFinanceiro ? mc('Receita estimada/mês','vg','R$ '+rec.toLocaleString('pt-BR'),'planos ativos') : '')+
   mc('Vencem em maio','va',vMaio.length,'renovar este mês')+
   mc('Em conversão','vi',pr.length+ex.length,pr.length+' prospects · '+ex.length+' exp.')+
   '</div>'+
@@ -2096,8 +2100,13 @@ function renderPFin(at, pags){
   const rec=at.reduce((s,a)=>s+(parseFloat(a.v)||0),0);
   const sd=at.filter(a=>!a.px||a.px==='parceria').length;
   const vj=at.filter(a=>{if(!a.px||a.px==='parceria')return false;const p=(a.px||'').split('/');return parseInt(p[1])===6;}).length;
+  const permF = usuarioAtual ? (PERMISSOES[usuarioAtual.perfil]||PERMISSOES.recepcao) : PERMISSOES.admin;
   set('<div class="pt">Financeiro — Pilates</div><div class="ps">Controle de mensalidades</div>'+
-  '<div class="metrics3">'+mc('Receita estimada/mês','vg','R$ '+rec.toLocaleString('pt-BR'),at.length+' ativos')+mc('Vencem em junho','va',vj,'próxima leva')+mc('Sem data registrada','vr',sd,'verificar')+'</div>'+
+  '<div class="metrics3">'+
+  (permF.verFinGeral ? mc('Receita estimada/mês','vg','R$ '+rec.toLocaleString('pt-BR'),at.length+' ativos') : '')+
+  mc('Vencem em junho','va',vj,'próxima leva')+
+  mc('Sem data registrada','vr',sd,'verificar')+
+  '</div>'+
   (pags&&pags.length?'<div style="font-size:11px;font-weight:500;color:#666;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Últimos pagamentos registrados</div>'+
   '<div class="tw"><table><thead><tr><th>Aluno</th><th>Referência</th><th>Valor</th><th>Forma</th><th>Data</th></tr></thead><tbody>'+
   pags.slice(-10).reverse().map(p=>'<tr><td>'+p.aluno_nome+'</td><td>'+p.referencia+'</td><td style="color:#16a34a;font-weight:500">'+fR(p.valor)+'</td><td>'+p.forma_pgto+'</td><td style="color:#666">'+p.data_pgto+'</td></tr>').join('')+
