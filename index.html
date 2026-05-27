@@ -1138,11 +1138,36 @@ function renderSemana(seg, dom){
   }
 
   // Renderiza bloco de evento
-  function blocoEvento(ev){
+  // Detecta conflitos e calcula colunas para cada evento do dia
+  function calcularColunas(evsDia){
+    // Ordena por início
+    const evs = evsDia.filter(ev=>ev.start?.dateTime).map(ev=>({
+      ev,
+      start: new Date(ev.start.dateTime).getTime(),
+      end:   new Date(ev.end?.dateTime||ev.start.dateTime).getTime()
+    })).sort((a,b)=>a.start-b.start);
+
+    const colunas = []; // cada coluna é um array de slots ocupados
+
+    evs.forEach(item=>{
+      // Acha a primeira coluna onde não há conflito
+      let col = colunas.findIndex(c=>!c.some(o=>item.start < o.end && item.end > o.start));
+      if(col===-1){ colunas.push([]); col=colunas.length-1; }
+      colunas[col].push(item);
+      item.col = col;
+    });
+
+    const total = colunas.length||1;
+    evs.forEach(item=>item.totalCols=total);
+    return evs;
+  }
+
+  function blocoEvento(item){
+    const ev = item.ev||item; // suporta tanto o objeto wrapped quanto direto
     const sRaw = ev.start?.dateTime||ev.start?.date;
     const eRaw = ev.end?.dateTime||ev.end?.date;
     const allDay = !ev.start?.dateTime;
-    if(allDay) return ''; // ignora dia-inteiro no grid (mostra acima)
+    if(allDay) return '';
 
     const start = new Date(sRaw);
     const end   = new Date(eRaw);
@@ -1150,22 +1175,35 @@ function renderSemana(seg, dom){
     const dur   = (end - start) / 3600000;
     const h     = Math.max(dur * PX_HORA, 22);
     const cor   = corEv(ev);
-    const isFisio = (ev.summary||'').toLowerCase().startsWith('fisio');
-    const textCor = '#1a1a18';
-
     const horaStr = start.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-    const evIdx   = gcalEvents.indexOf(ev);
+    const evIdx = gcalEvents.indexOf(ev);
+
+    // Posição horizontal baseada em coluna
+    const col       = item.col||0;
+    const totalCols = item.totalCols||1;
+    const pctW = 100/totalCols;
+    const left = col * pctW;
+    const width = pctW - 1; // 1% de gap entre colunas
 
     return `<div onclick="abrirEditarEvento(${evIdx})" style="
-      position:absolute;top:${top}px;left:2px;right:2px;height:${h}px;
-      background:${cor}22;border-left:3px solid ${cor};border-radius:6px;
-      padding:3px 6px;cursor:pointer;overflow:hidden;
-      transition:all .15s;box-shadow:0 1px 4px rgba(0,0,0,.1);
+      position:absolute;
+      top:${top}px;
+      left:calc(${left}% + 2px);
+      width:calc(${width}% - 4px);
+      height:${h}px;
+      background:${cor}22;
+      border-left:3px solid ${cor};
+      border-radius:6px;
+      padding:3px 6px;
+      cursor:pointer;
+      overflow:hidden;
+      transition:all .15s;
+      box-shadow:0 1px 4px rgba(0,0,0,.08);
       z-index:2;
     " onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,.2)';this.style.zIndex=10"
-       onmouseout="this.style.boxShadow='0 1px 4px rgba(0,0,0,.1)';this.style.zIndex=2">
+       onmouseout="this.style.boxShadow='0 1px 4px rgba(0,0,0,.08)';this.style.zIndex=2">
       <div style="font-size:10px;font-weight:600;color:${cor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ev.summary||'(sem título)'}</div>
-      ${h>30?`<div style="font-size:9px;color:${cor}99">${horaStr}</div>`:''}
+      ${h>28?`<div style="font-size:9px;color:${cor}bb">${horaStr}</div>`:''}
     </div>`;
   }
 
@@ -1225,9 +1263,12 @@ function renderSemana(seg, dom){
     dias.map(d=>{
       const evsDia = porDia[d.toDateString()]||[];
       const isHoje = d.toDateString()===hoje.toDateString();
+      const evsComColunas = calcularColunas(evsDia);
+      // Eventos dia-inteiro ficam acima (ignorados no grid)
+      const evsDiaInteiro = evsDia.filter(ev=>!ev.start?.dateTime);
       return `<div style="border-right:1px solid var(--border);position:relative;${isHoje?'background:rgba(201,169,110,.03)':''}">
         ${HORAS_GRID.map(h=>`<div style="height:${PX_HORA}px;border-bottom:1px solid rgba(201,169,110,.08)" onclick="abrirNovoEventoHora(${d.getFullYear()},${d.getMonth()},${d.getDate()},${h})"></div>`).join('')}
-        ${evsDia.map(ev=>blocoEvento(ev)).join('')}
+        ${evsComColunas.map(item=>blocoEvento(item)).join('')}
       </div>`;
     }).join('')+
     '</div></div>';
