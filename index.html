@@ -2097,27 +2097,110 @@ async function navPFin(){
 }
 
 function renderPFin(at, pags){
-  const rec=at.reduce((s,a)=>s+(parseFloat(a.v)||0),0);
-  const sd=at.filter(a=>!a.px||a.px==='parceria').length;
-  const vj=at.filter(a=>{if(!a.px||a.px==='parceria')return false;const p=(a.px||'').split('/');return parseInt(p[1])===6;}).length;
   const permF = usuarioAtual ? (PERMISSOES[usuarioAtual.perfil]||PERMISSOES.recepcao) : PERMISSOES.admin;
-  set('<div class="pt">Financeiro — Pilates</div><div class="ps">Controle de mensalidades</div>'+
-  '<div class="metrics3">'+
-  (permF.verFinGeral ? mc('Receita estimada/mês','vg','R$ '+rec.toLocaleString('pt-BR'),at.length+' ativos') : '')+
-  mc('Vencem em junho','va',vj,'próxima leva')+
-  mc('Sem data registrada','vr',sd,'verificar')+
-  '</div>'+
-  (pags&&pags.length?'<div style="font-size:11px;font-weight:500;color:#666;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Últimos pagamentos registrados</div>'+
-  '<div class="tw"><table><thead><tr><th>Aluno</th><th>Referência</th><th>Valor</th><th>Forma</th><th>Data</th></tr></thead><tbody>'+
-  pags.slice(-10).reverse().map(p=>'<tr><td>'+p.aluno_nome+'</td><td>'+p.referencia+'</td><td style="color:#16a34a;font-weight:500">'+fR(p.valor)+'</td><td>'+p.forma_pgto+'</td><td style="color:#666">'+p.data_pgto+'</td></tr>').join('')+
-  '</tbody></table></div>':'')+
-  '<div class="tb"><button class="btn btnb" onclick="abrirPagPilates(null,null)"><i class="ti ti-plus"></i> Registrar pagamento</button></div>'+
-  '<div class="tw"><table><thead><tr><th>Aluno</th><th>Plano</th><th>Último pgto</th><th>Próx. vencto</th><th>Valor</th><th></th></tr></thead><tbody>'+
-  at.sort((a,b)=>{if(!a.px||a.px==='parceria')return 1;if(!b.px||b.px==='parceria')return -1;
-    const[da,ma]=(a.px).split('/').map(Number);const[db,mb]=(b.px).split('/').map(Number);return(ma*100+da)-(mb*100+db);})
-  .map(a=>'<tr><td>'+ncell(a)+'</td><td>'+a.pl+'</td><td>'+(a.pg||'—')+'</td><td>'+(a.px||'—')+'</td><td>R$ '+a.v+'</td>'+
-  '<td><button class="btn btns" onclick="abrirPagPilates(\''+esc(a.n)+'\','+(a.v||0)+')">✓</button></td></tr>').join('')+
-  '</tbody></table></div>');
+  const rec   = at.reduce((s,a)=>s+(parseFloat(a.v)||0),0);
+  const sd    = at.filter(a=>!a.px||a.px==='parceria').length;
+
+  // Mês/ano atual
+  const agora   = new Date();
+  const mesAtual = agora.getMonth()+1;
+  const anoAtual = agora.getFullYear();
+  const mesStr   = String(mesAtual).padStart(2,'0');
+  const anoStr   = String(anoAtual).slice(2);
+
+  // Verifica se aluno já pagou neste mês
+  // Critério: ultimo_pagto no formato dd/mm/aa e mês/ano batem com o atual
+  function jaPagouEsteMes(a){
+    if(!a.pg) return false;
+    const partes = a.pg.split('/');
+    if(partes.length<3) return false;
+    const mm = partes[1]; const yy = partes[2];
+    return mm===mesStr && yy===anoStr;
+  }
+
+  // Separa pagos e pendentes
+  const pagos    = at.filter(a=>jaPagouEsteMes(a));
+  const pendentes = at.filter(a=>!jaPagouEsteMes(a));
+
+  // Ordena pendentes por vencimento mais próximo
+  const pendOrdenados = pendentes.sort((a,b)=>{
+    if(!a.px||a.px==='parceria') return 1;
+    if(!b.px||b.px==='parceria') return -1;
+    const[da,ma]=(a.px).split('/').map(Number);
+    const[db,mb]=(b.px).split('/').map(Number);
+    return(ma*100+da)-(mb*100+db);
+  });
+
+  set(
+    '<div class="pt">Financeiro — Pilates</div>'+
+    '<div class="ps">Controle de mensalidades · '+mesAtual+'/'+anoAtual+'</div>'+
+
+    '<div class="metrics3">'+
+    (permF.verFinGeral ? mc('Receita estimada/mês','vg','R$ '+rec.toLocaleString('pt-BR'),at.length+' ativos') : '')+
+    mc('Pagos este mês','vg',pagos.length,'de '+at.length+' ativos')+
+    mc('Pendentes','va',pendentes.length, sd>0?sd+' sem data':'')+
+    '</div>'+
+
+    // Botão registrar
+    '<div class="tb"><button class="btn btnb" onclick="abrirPagPilates(null,null)">'+
+    '<i class="ti ti-plus"></i> Registrar pagamento</button></div>'+
+
+    // Últimos pagamentos registrados
+    (pags&&pags.length?
+    '<div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
+    '<i class="ti ti-cash"></i> Últimos pagamentos registrados</div>'+
+    '<div class="tw" style="margin-bottom:18px"><table><thead><tr>'+
+    '<th>Aluno</th><th>Referência</th><th>Valor</th><th>Forma</th><th>Data pgto</th>'+
+    '</tr></thead><tbody>'+
+    pags.slice(-15).reverse().map(p=>
+      '<tr style="background:rgba(22,163,74,.03)">'+
+      '<td style="font-weight:500">'+p.aluno_nome+'</td>'+
+      '<td style="color:var(--brown-light)">'+p.referencia+'</td>'+
+      '<td style="color:#3D5C1A;font-weight:600">'+fR(p.valor)+'</td>'+
+      '<td style="color:var(--brown-light)">'+p.forma_pgto+'</td>'+
+      '<td style="color:var(--brown-light)">'+p.data_pgto+'</td>'+
+      '</tr>'
+    ).join('')+'</tbody></table></div>':'')+ 
+
+    // Pendentes de pagamento
+    '<div style="font-size:11px;font-weight:600;color:#8B2E1A;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
+    '<i class="ti ti-alert-circle"></i> Pendentes este mês ('+pendentes.length+')</div>'+
+    '<div class="tw" style="margin-bottom:18px"><table><thead><tr>'+
+    '<th>Aluno</th><th>Plano</th><th>Último pgto</th><th>Próx. vencto</th><th>Valor</th><th></th>'+
+    '</tr></thead><tbody>'+
+    (pendOrdenados.length?
+    pendOrdenados.map(a=>
+      '<tr>'+
+      '<td>'+ncell(a)+'</td>'+
+      '<td style="color:var(--brown-light)">'+a.pl+'</td>'+
+      '<td style="color:var(--brown-light)">'+(a.pg||'—')+'</td>'+
+      '<td>'+(a.px&&a.px!=='parceria'?'<span style="color:#8B2E1A;font-weight:500">'+a.px+'</span>':'<span style="color:var(--brown-light)">'+( a.px||'—')+'</span>')+'</td>'+
+      '<td style="font-weight:500">R$ '+a.v+'</td>'+
+      '<td><button class="btn btns btnb" onclick="abrirPagPilates(\''+esc(a.n)+'\','+(a.v||0)+')">✓ Pago</button></td>'+
+      '</tr>'
+    ).join(''):
+    '<tr><td colspan="6" style="text-align:center;padding:20px;color:#3D5C1A">'+
+    '<i class="ti ti-circle-check" style="font-size:18px;display:block;margin-bottom:4px"></i>'+
+    'Todos pagaram este mês!</td></tr>')+
+    '</tbody></table></div>'+
+
+    // Já pagaram este mês
+    (pagos.length?
+    '<div style="font-size:11px;font-weight:600;color:#3D5C1A;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
+    '<i class="ti ti-circle-check"></i> Pagos este mês ('+pagos.length+')</div>'+
+    '<div class="tw"><table><thead><tr>'+
+    '<th>Aluno</th><th>Plano</th><th>Pagou em</th><th>Próx. vencto</th><th>Valor</th>'+
+    '</tr></thead><tbody>'+
+    pagos.map(a=>
+      '<tr style="background:rgba(22,163,74,.03)">'+
+      '<td>'+ncell(a)+'</td>'+
+      '<td style="color:var(--brown-light)">'+a.pl+'</td>'+
+      '<td style="color:#3D5C1A;font-weight:500">'+a.pg+'</td>'+
+      '<td style="color:var(--brown-light)">'+(a.px||'—')+'</td>'+
+      '<td style="color:var(--brown-light)">R$ '+a.v+'</td>'+
+      '</tr>'
+    ).join('')+'</tbody></table></div>':'')
+  );
 }
 
 // ── FISIO ─────────────────────────────────────────────────
@@ -2148,29 +2231,120 @@ function renderFDash(dados){
 }
 
 async function navFPacientes(){
-  window._fisioCache = FISIO;
-  renderFPacientes(FISIO);
+  // Mostra imediatamente do cache ou local
+  const cacheAtual = (window._fisioCache||FISIO).filter(p=>p.status!=='alta');
+  renderFPacientes(cacheAtual);
   try {
     const rows = await sbGet('pacientes_fisio','nome');
-    const merged = rows.length > 0 ? rows.map(r=>({id:r.id,n:r.nome,sessoes:r.sessoes_contratadas,realizadas:r.sessoes_realizadas||0,datas:[]})) : FISIO;
+    // Merge banco + FISIO local (sem duplicar)
+    const dbNomes = new Set(rows.map(r=>r.nome));
+    const merged = [
+      ...rows.map(r=>({id:r.id,n:r.nome,sessoes:r.sessoes_contratadas,realizadas:r.sessoes_realizadas||0,status:r.status||'ativo',datas:[]})),
+      ...FISIO.filter(p=>!dbNomes.has(p.n)).map(p=>({...p,status:'ativo'}))
+    ];
     window._fisioCache = merged;
-    renderFPacientes(merged);
+    const ativos = merged.filter(p=>p.status!=='alta');
+    renderFPacientes(ativos);
   } catch(e){ console.warn('Supabase pacientes:', e.message); }
 }
 
 function renderFPacientes(dados){
-  set('<div class="pt">Pacientes</div><div class="ps">'+dados.length+' pacientes cadastrados</div>'+
-  '<div class="tb"><div style="margin-left:auto"><button class="btn btne" onclick="abrirNovoPaciente()"><i class="ti ti-plus"></i> Novo paciente</button></div></div>'+
-  '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">'+
-  dados.map((p,i)=>{
-    const pct=p.sessoes?Math.min(100,Math.round(p.realizadas/p.sessoes*100)):null;
-    const ok=p.sessoes&&p.realizadas>=p.sessoes;
-    return '<div style="background:#fff;border:.5px solid rgba(0,0,0,.12);border-radius:12px;padding:14px;cursor:pointer;border-left:3px solid '+(ok?'#16a34a':p.realizadas>0?'#059669':'#d97706')+'" onclick="verPaciente('+i+')">'+
-    '<div style="font-size:13px;font-weight:500;margin-bottom:4px">'+p.n+'</div>'+
-    '<div style="font-size:11px;color:#666;margin-bottom:8px">'+(p.sessoes?p.realizadas+' / '+p.sessoes+' sessões':p.realizadas+' sessões (livre)')+'</div>'+
-    (pct!=null?'<div style="height:5px;border-radius:3px;background:#f1f0e8"><div style="width:'+pct+'%;height:100%;border-radius:3px;background:'+(ok?'#16a34a':'#059669')+'"></div></div>':'')+
-    '</div>';
-  }).join('')+'</div>');
+  const total = (window._fisioCache||dados).length;
+  const altas  = (window._fisioCache||dados).filter(p=>p.status==='alta').length;
+  set(
+    '<div class="pt">Pacientes</div>'+
+    '<div class="ps">'+dados.length+' em tratamento · '+altas+' com alta</div>'+
+    '<div class="tabs">'+
+    '<button class="tab act acte" onclick="navFPacientes()">Em tratamento ('+dados.length+')</button>'+
+    '<button class="tab" onclick="navFAltas()">Com alta ('+altas+')</button>'+
+    '</div>'+
+    '<div class="tb"><div style="margin-left:auto">'+
+    '<button class="btn btne" onclick="abrirNovoPaciente()"><i class="ti ti-plus"></i> Novo paciente</button></div></div>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">'+
+    dados.map((p,i)=>{
+      const pct=p.sessoes?Math.min(100,Math.round(p.realizadas/p.sessoes*100)):null;
+      const ok=p.sessoes&&p.realizadas>=p.sessoes;
+      return '<div style="background:var(--white);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;border-left:3px solid '+(ok?'#5C7A2E':p.realizadas>0?'#4A6B2E':'#B8924A')+'" onclick="verPaciente('+i+')">'+
+      '<div style="font-size:13px;font-weight:500;margin-bottom:4px;color:var(--brown)">'+p.n+'</div>'+
+      '<div style="font-size:11px;color:var(--brown-light);margin-bottom:8px">'+(p.sessoes?p.realizadas+' / '+p.sessoes+' sessões':p.realizadas+' sessões (livre)')+'</div>'+
+      (pct!=null?'<div style="height:5px;border-radius:3px;background:var(--cream-dark)"><div style="width:'+pct+'%;height:100%;border-radius:3px;background:'+(ok?'#5C7A2E':'#4A6B2E')+'"></div></div>':'')+
+      '</div>';
+    }).join('')+
+    '</div>'
+  );
+  window._fisioListaAtual = dados;
+}
+
+function navFAltas(){
+  const todas = window._fisioCache||FISIO;
+  const altas = todas.filter(p=>p.status==='alta');
+  const total = todas.filter(p=>p.status!=='alta').length;
+  set(
+    '<div class="pt">Pacientes com Alta</div>'+
+    '<div class="ps">'+altas.length+' pacientes que concluíram o tratamento</div>'+
+    '<div class="tabs">'+
+    '<button class="tab" onclick="navFPacientes()">Em tratamento ('+total+')</button>'+
+    '<button class="tab act acte" onclick="navFAltas()">Com alta ('+altas.length+')</button>'+
+    '</div>'+
+    '<div class="tw"><table><thead><tr>'+
+    '<th>Paciente</th><th>Sessões contratadas</th><th>Sessões realizadas</th><th>Status</th>'+
+    '</tr></thead><tbody>'+
+    (altas.length?altas.map(p=>'<tr>'+
+      '<td><strong>'+p.n+'</strong></td>'+
+      '<td style="color:var(--brown-light)">'+(p.sessoes||'—')+'</td>'+
+      '<td>'+p.realizadas+'</td>'+
+      '<td><span class="bdg bg">Alta</span></td>'+
+      '</tr>').join(''):
+      '<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--brown-light)">Nenhum paciente com alta</td></tr>')+
+    '</tbody></table></div>'
+  );
+}
+
+function verPaciente(idx){
+  const cache = window._fisioListaAtual || window._fisioCache || FISIO;
+  const p = cache[idx];
+  if(!p) return;
+  window._pacienteAtual = p;
+  const ok=p.sessoes&&p.realizadas>=p.sessoes;
+  const faltam=p.sessoes?Math.max(0,p.sessoes-p.realizadas):null;
+  set(
+    '<div class="tb"><button class="btn" onclick="navFPacientes()"><i class="ti ti-arrow-left"></i> Voltar</button></div>'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'+
+    '<div style="width:44px;height:44px;border-radius:50%;background:rgba(74,107,46,.15);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;color:#3D5C3A">'+
+    p.n.split(' ').filter(Boolean).slice(0,2).map(w=>w[0]?.toUpperCase()||'').join('')+'</div>'+
+    '<div><div style="font-size:15px;font-weight:500;color:var(--brown)">'+p.n+'</div></div>'+
+    '<span style="margin-left:auto"><span class="bdg '+(ok?'bg':p.realizadas>0?'ba':'bx')+'">'+(ok?'Concluído':p.realizadas>0?'Em andamento':'Aguardando')+'</span></span>'+
+    '</div>'+
+    '<div class="dp"><h3>Sessões</h3>'+
+    dr('Sessões contratadas',p.sessoes||'Sem contrato fixo')+
+    dr('Sessões realizadas',p.realizadas)+
+    (faltam!=null?dr('Faltam',faltam+' sessão(ões)'):'')+
+    '</div>'+
+    (p.datas&&p.datas.length?'<div class="dp"><h3>Datas realizadas</h3>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:4px;padding:4px 0">'+
+    p.datas.map(d=>'<span style="background:rgba(74,107,46,.1);color:#3D5C3A;padding:3px 8px;border-radius:6px;font-size:11px">'+(d||'—')+'</span>').join('')+
+    '</div></div>':'')+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+    '<button class="btn btne" onclick="abrirRegistrarSessao(\''+esc(p.n)+'\')"><i class="ti ti-plus"></i> Registrar sessão</button>'+
+    '<button class="btn" style="color:#8B2E1A;border-color:rgba(139,46,26,.3)" onclick="darAlta()"><i class="ti ti-user-check"></i> Dar alta</button>'+
+    '</div>'
+  );
+}
+
+async function darAlta(){
+  const p = window._pacienteAtual;
+  if(!p) return;
+  if(!confirm('Dar alta para '+p.n+'? O paciente será movido para o relatório de altas.')) return;
+  try {
+    if(p.id) await sbUpdate('pacientes_fisio', p.id, {status:'alta'});
+    // Atualiza cache
+    if(window._fisioCache){
+      const i = window._fisioCache.findIndex(x=>x.n===p.n);
+      if(i>=0) window._fisioCache[i].status='alta';
+    }
+    await registrarLog('deu alta', 'pacientes_fisio', 'Alta: '+p.n);
+    navFPacientes();
+  } catch(e){ alert('Erro: '+e.message); }
 }
 
 // ── LOJA ──────────────────────────────────────────────────
@@ -2264,14 +2438,18 @@ async function navLEstoque(){
 function renderLEstoque(all){
   const total=all.reduce((s,e)=>s+qtdN(e.qtd),0);
   const zeros=all.filter(e=>qtdN(e.qtd)===0).length;
-  const lista=all.filter(e=>!ft||e.item.toLowerCase().includes(ft.toLowerCase()));
+  const lista=all.filter(e=>!ft||(e.item||'').toLowerCase().includes(ft.toLowerCase())||(e.marca||'').toLowerCase().includes(ft.toLowerCase()));
   set('<div class="pt">Estoque</div><div class="ps">'+all.length+' modelos · '+total+' unidades · '+zeros+' zeradas</div>'+
   '<div class="metrics3">'+mc('Total em estoque','vi',total,'unidades')+mc('Peças zeradas','vr',zeros,'sem estoque')+mc('Modelos','vg',all.length,'cadastrados')+'</div>'+
-  '<div class="tb"><input class="srch" placeholder="Buscar peça…" oninput="ft=this.value;renderLEstoque(window._estoqueCache||[])" value="'+ft+'">'+
+  '<div class="tb"><input class="srch" placeholder="Buscar peça ou marca…" oninput="ft=this.value;renderLEstoque(window._estoqueCache||[])" value="'+ft+'">'+
   '<div style="margin-left:auto"><button class="btn btnp" onclick="abrirNovaPeca()"><i class="ti ti-plus"></i> Nova peça</button></div></div>'+
   '<div class="card-grid">'+
-  lista.map(e=>{const q=qtdN(e.qtd);const cls=q===0?'s0':q<=1?'slow':'sok';
-    return '<div class="prod-card '+cls+'"><div class="pn">'+e.item+'</div><div class="pm">'+e.tam+'</div>'+
+  lista.map(e=>{
+    const q=qtdN(e.qtd); const cls=q===0?'s0':q<=1?'slow':'sok';
+    return '<div class="prod-card '+cls+'" onclick="abrirEditarPeca(\''+esc(e.item||'')+'\')">'+
+    '<div class="pn">'+e.item+'</div>'+
+    (e.marca?'<div style="font-size:10px;font-weight:600;color:var(--gold-dark);margin-bottom:2px">'+e.marca+'</div>':'')+
+    '<div class="pm">'+e.tam+'</div>'+
     '<div class="pt2"><span class="bdg '+(q===0?'br':q<=1?'ba':'bg')+'">'+(q===0?'Sem estoque':q+' un.')+'</span></div></div>';
   }).join('')+'</div>');
 }
@@ -2361,12 +2539,57 @@ async function confirmarPagamento(){
   if(!aluno||!valor){ alert('Preencha aluno e valor.'); return; }
   const btn=document.getElementById('pg_btn');
   btn.disabled=true; btn.textContent='Salvando…';
-  const hoje = new Date(); const d=String(hoje.getDate()).padStart(2,'0'), m=String(hoje.getMonth()+1).padStart(2,'0'), y=String(hoje.getFullYear()).slice(2);
+
+  const hoje = new Date();
+  const pad  = n=>String(n).padStart(2,'0');
+  const dataStr = pad(hoje.getDate())+'/'+pad(hoje.getMonth()+1)+'/'+String(hoje.getFullYear()).slice(2);
+
   try {
-    await sbInsert('pagamentos',{aluno_nome:aluno,referencia:ref,valor,forma_pgto:forma,data_pgto:d+'/'+m+'/'+y});
-    await registrarLog('registrou pagamento', 'pagamentos', aluno+' — '+fR(valor)+' ref. '+ref);
+    // 1. Salva o pagamento
+    await sbInsert('pagamentos',{aluno_nome:aluno,referencia:ref,valor,forma_pgto:forma,data_pgto:dataStr});
+
+    // 2. Busca dados atuais do aluno para calcular próximo vencimento correto
+    let novoProx = null;
+    try {
+      const rows = await sbGet('alunos','nome');
+      const pac  = rows.find(r=>r.nome===aluno);
+      if(pac){
+        // Calcula próximo vencimento: pega o dia do vencimento atual e avança 1 mês
+        let diaVenc = hoje.getDate(); // padrão: mesmo dia de hoje
+        if(pac.prox_vencto && pac.prox_vencto!=='parceria'){
+          const partes = pac.prox_vencto.split('/');
+          if(partes.length>=2) diaVenc = parseInt(partes[0])||hoje.getDate();
+        }
+        const proxData = new Date(hoje.getFullYear(), hoje.getMonth()+1, diaVenc);
+        novoProx = pad(proxData.getDate())+'/'+pad(proxData.getMonth()+1)+'/'+String(proxData.getFullYear()).slice(2);
+
+        await sbUpdate('alunos', pac.id, {
+          ultimo_pagto: dataStr,
+          prox_vencto:  novoProx
+        });
+      }
+    } catch(e2){ console.warn('Update aluno banco:', e2.message); }
+
+    // 3. Atualiza cache local (AL e _alunosDB)
+    const atualizarCache = (lista)=>{
+      const a = lista.find(x=>x.n===aluno);
+      if(a){
+        a.pg = dataStr;
+        if(novoProx) a.px = novoProx;
+      }
+    };
+    atualizarCache(AL);
+    if(window._alunosDB) atualizarCache(window._alunosDB);
+
+    await registrarLog('registrou pagamento','pagamentos', aluno+' — '+fR(valor)+' ref. '+ref+' | próx: '+(novoProx||'—'));
     fecharModal();
-    navPFin();
+
+    // 4. Recarrega a página atual com dados frescos do banco
+    if(pg==='p_fin')   navPFin();
+    else if(pg==='p_alunos') navPAlunos();
+    else if(pg==='p_dash')   navPDash();
+    else navPFin();
+
   } catch(e){ btn.disabled=false; btn.textContent='Confirmar'; alert('Erro: '+e.message); }
 }
 
@@ -2447,9 +2670,17 @@ async function confirmarNovoPaciente(){
   if(!nome){ alert('Informe o nome.'); return; }
   const btn=document.getElementById('fp_btn'); btn.disabled=true; btn.textContent='Salvando…';
   try {
-    await sbInsert('pacientes_fisio',{nome,telefone:document.getElementById('fp_tel').value||null,sessoes_contratadas:parseInt(document.getElementById('fp_sess').value)||null,sessoes_realizadas:0});
+    await sbInsert('pacientes_fisio',{
+      nome,
+      telefone:document.getElementById('fp_tel').value||null,
+      sessoes_contratadas:parseInt(document.getElementById('fp_sess').value)||null,
+      sessoes_realizadas:0,
+      status:'ativo'
+    });
     await registrarLog('cadastrou paciente', 'pacientes_fisio', 'Novo paciente: '+nome);
     fecharModal();
+    // Limpa cache para forçar reload completo do banco
+    window._fisioCache = null;
     navFPacientes();
   } catch(e){ btn.disabled=false; btn.textContent='Salvar'; alert('Erro: '+e.message); }
 }
@@ -2500,8 +2731,11 @@ function abrirNovaVenda(){
 function abrirNovaPeca(){
   abrirModal('<div class="mdt">Nova peça no estoque</div>'+
   '<label class="fl">Nome da peça *</label><input class="fi" id="pc_item" placeholder="Ex: Calça Flare Fold Espresso">'+
-  '<div class="fr2"><div><label class="fl">Tamanho(s)</label><input class="fi" id="pc_tam" placeholder="P, M, G"></div>'+
-  '<div><label class="fl">Quantidade</label><input class="fi" id="pc_qtd" type="number" placeholder="1" value="1"></div></div>'+
+  '<div class="fr2"><div><label class="fl">Marca</label><select class="fi" id="pc_marca">'+
+    '<option value="">—</option><option>Rosa Imperial</option><option>Camomila</option><option>Mnovo</option><option>Mantig</option><option>ALAD Amanda</option><option>Lm</option>'+
+  '</select></div>'+
+  '<div><label class="fl">Tamanho(s)</label><input class="fi" id="pc_tam" placeholder="P, M, G"></div></div>'+
+  '<label class="fl">Quantidade</label><input class="fi" id="pc_qtd" type="number" placeholder="1" value="1">'+
   '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button>'+
   '<button class="btn btnp" onclick="confirmarNovaPeca()">Salvar</button></div>');
 }
@@ -2509,8 +2743,37 @@ function abrirNovaPeca(){
 async function confirmarNovaPeca(){
   const item=document.getElementById('pc_item').value.trim();
   if(!item){ alert('Informe o nome.'); return; }
+  const marca=document.getElementById('pc_marca').value||null;
   try {
-    await sbInsert('estoque',{item,tamanho:document.getElementById('pc_tam').value||null,quantidade:parseInt(document.getElementById('pc_qtd').value)||0});
+    await sbInsert('estoque',{item,marca,tamanho:document.getElementById('pc_tam').value||null,quantidade:parseInt(document.getElementById('pc_qtd').value)||0});
+    await registrarLog('cadastrou peça','estoque','Nova peça: '+item+(marca?' ('+marca+')':''));
+    fecharModal(); navLEstoque();
+  } catch(e){ alert('Erro: '+e.message); }
+}
+
+function abrirEditarPeca(item){
+  const e=(window._estoqueCache||ESTOQUE).find(x=>x.item===item);
+  if(!e) return;
+  abrirModal('<div class="mdt">Editar peça</div>'+
+  '<label class="fl">Nome da peça</label><input class="fi" id="pc_item" value="'+esc(e.item||'')+'">'+
+  '<div class="fr2"><div><label class="fl">Marca</label><select class="fi" id="pc_marca">'+
+    '<option value="">—</option>'+
+    ['Rosa Imperial','Camomila','Mnovo','Mantig','ALAD Amanda','Lm'].map(m=>'<option'+(e.marca===m?' selected':'')+'>'+m+'</option>').join('')+
+  '</select></div>'+
+  '<div><label class="fl">Tamanho(s)</label><input class="fi" id="pc_tam" value="'+(e.tam||'')+'"></div></div>'+
+  '<label class="fl">Quantidade</label><input class="fi" id="pc_qtd" type="number" value="'+(qtdN(e.qtd)||0)+'">'+
+  '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button>'+
+  '<button class="btn btnp" onclick="confirmarEditarPeca(\''+esc(e.id||'')+'\')">Salvar</button></div>');
+}
+
+async function confirmarEditarPeca(id){
+  const item=document.getElementById('pc_item').value.trim();
+  const marca=document.getElementById('pc_marca').value||null;
+  const tam=document.getElementById('pc_tam').value||null;
+  const qtd=parseInt(document.getElementById('pc_qtd').value)||0;
+  try {
+    if(id) await sbUpdate('estoque',id,{item,marca,tamanho:tam,quantidade:qtd});
+    await registrarLog('editou peça','estoque',item);
     fecharModal(); navLEstoque();
   } catch(e){ alert('Erro: '+e.message); }
 }
