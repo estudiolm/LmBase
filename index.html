@@ -1059,26 +1059,20 @@ async function rGcal(){
       '<i class="ti ti-calendar-off"></i>'+
       '<h3>Google Agenda não conectada</h3>'+
       '<p style="font-size:13px;color:var(--brown-light);margin-bottom:16px">Conecte sua conta Google para ver e gerenciar eventos.</p>'+
-      '<button class="btn btnb" onclick="conectarGoogle()">'+
-      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:middle;margin-right:6px"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#fff"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#fff"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#fff"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#fff"/></svg>'+
-      'Conectar Google Agenda</button>'+
+      '<button class="btn btnb" onclick="conectarGoogle()">Conectar Google Agenda</button>'+
     '</div>');
     return;
   }
 
-  set('<div class="pt">Google Agenda</div><div class="ps">Sincronizado com sua conta Google</div>'+
+  set('<div class="pt">Google Agenda</div><div class="ps">Carregando…</div>'+
     '<div style="display:flex;align-items:center;justify-content:center;height:200px;flex-direction:column;gap:10px;color:var(--brown-light)">'+
     '<div style="width:28px;height:28px;border:3px solid var(--cream-dark);border-top-color:#4285F4;border-radius:50%;animation:spin .8s linear infinite"></div>'+
-    '<span>Carregando eventos…</span></div>');
+    '<span>Carregando agenda…</span></div>');
 
   try {
-    // Busca calendários
     gcalCals = await gcalListCalendars();
-    // Busca eventos dos próximos 30 dias
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
-    const fim  = new Date(hoje); fim.setDate(fim.getDate()+30);
-    gcalEvents = await gcalListEvents(gcalSelectedCal, hoje.toISOString(), fim.toISOString());
-    renderGcal();
+    // Carrega a semana atual
+    await carregarSemana(gcalViewDate);
   } catch(e){
     set('<div class="acesso-negado"><i class="ti ti-alert-circle"></i><h3>Erro ao carregar</h3>'+
       '<p style="font-size:13px;color:var(--brown-light)">'+e.message+'</p>'+
@@ -1086,185 +1080,318 @@ async function rGcal(){
   }
 }
 
-function renderGcal(){
+async function carregarSemana(refDate){
+  // Calcula Seg–Dom da semana de refDate
+  const d = new Date(refDate);
+  const dow = d.getDay(); // 0=dom
+  const seg = new Date(d); seg.setDate(d.getDate() - (dow===0?6:dow-1)); seg.setHours(0,0,0,0);
+  const dom = new Date(seg); dom.setDate(seg.getDate()+6); dom.setHours(23,59,59,0);
+  gcalViewDate = seg;
+
+  // Busca eventos da semana em todos os calendários visíveis
+  const promises = gcalCals
+    .filter(c=>c.selected!==false)
+    .map(c=>gcalListEvents(c.id, seg.toISOString(), dom.toISOString())
+      .then(evs=>evs.map(e=>({...e,_calColor:c.backgroundColor||'#4285F4',_calId:c.id})))
+      .catch(()=>[])
+    );
+  const resultados = await Promise.all(promises);
+  gcalEvents = resultados.flat().sort((a,b)=>{
+    const ta = a.start?.dateTime||a.start?.date||'';
+    const tb = b.start?.dateTime||b.start?.date||'';
+    return ta.localeCompare(tb);
+  });
+
+  renderSemana(seg, dom);
+}
+
+function renderSemana(seg, dom){
   const hoje = new Date(); hoje.setHours(0,0,0,0);
-  const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const diasSem = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const diasNomes = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const mesesNomes = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 
-  // Monta calendário do mês
-  const ano = gcalViewDate.getFullYear();
-  const mes = gcalViewDate.getMonth();
-  const primeiroDia = new Date(ano, mes, 1);
-  const ultimoDia   = new Date(ano, mes+1, 0);
-  const offset = primeiroDia.getDay();
+  // Dias da semana (Seg a Dom)
+  const dias = Array.from({length:7},(_,i)=>{ const d=new Date(seg); d.setDate(seg.getDate()+i); return d; });
 
-  // Dias com eventos
-  const diasComEvento = new Set(gcalEvents.map(e=>{
-    const d = e.start?.dateTime||e.start?.date;
-    return d ? new Date(d).toDateString() : null;
-  }).filter(Boolean));
+  // Horas a mostrar: 5h às 22h
+  const HORAS_GRID = Array.from({length:18},(_,i)=>i+5);
 
-  // Próximos eventos (lista)
-  const proximos = gcalEvents.slice(0,15);
+  // Posição vertical: 1 hora = 60px
+  const PX_HORA = 60;
 
-  // Seletor de calendário
-  const calOpts = gcalCals.map(c=>
-    `<option value="${c.id}" ${c.id===gcalSelectedCal?'selected':''}>${c.summary}</option>`
-  ).join('');
+  // Agrupa eventos por dia
+  const porDia = {};
+  dias.forEach(d=>porDia[d.toDateString()]=[]);
+  gcalEvents.forEach(ev=>{
+    const s = ev.start?.dateTime||ev.start?.date;
+    if(!s) return;
+    const d = new Date(s);
+    const key = d.toDateString();
+    if(porDia[key]) porDia[key].push(ev);
+  });
 
-  set(
+  // Cor do evento
+  function corEv(ev){
+    const gcalCores = {'1':'#a4bdfc','2':'#7ae7bf','3':'#dbadff','4':'#ff887c','5':'#fbd75b','6':'#ffb878','7':'#46d6db','8':'#e1e1e1','9':'#5484ed','10':'#51b749','11':'#dc2127'};
+    if(ev.colorId && gcalCores[ev.colorId]) return gcalCores[ev.colorId];
+    return ev._calColor||'#4285F4';
+  }
+
+  // Renderiza bloco de evento
+  function blocoEvento(ev){
+    const sRaw = ev.start?.dateTime||ev.start?.date;
+    const eRaw = ev.end?.dateTime||ev.end?.date;
+    const allDay = !ev.start?.dateTime;
+    if(allDay) return ''; // ignora dia-inteiro no grid (mostra acima)
+
+    const start = new Date(sRaw);
+    const end   = new Date(eRaw);
+    const top   = (start.getHours() + start.getMinutes()/60 - HORAS_GRID[0]) * PX_HORA;
+    const dur   = (end - start) / 3600000;
+    const h     = Math.max(dur * PX_HORA, 22);
+    const cor   = corEv(ev);
+    const isFisio = (ev.summary||'').toLowerCase().startsWith('fisio');
+    const textCor = '#1a1a18';
+
+    const horaStr = start.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    const evIdx   = gcalEvents.indexOf(ev);
+
+    return `<div onclick="abrirEditarEvento(${evIdx})" style="
+      position:absolute;top:${top}px;left:2px;right:2px;height:${h}px;
+      background:${cor}22;border-left:3px solid ${cor};border-radius:6px;
+      padding:3px 6px;cursor:pointer;overflow:hidden;
+      transition:all .15s;box-shadow:0 1px 4px rgba(0,0,0,.1);
+      z-index:2;
+    " onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,.2)';this.style.zIndex=10"
+       onmouseout="this.style.boxShadow='0 1px 4px rgba(0,0,0,.1)';this.style.zIndex=2">
+      <div style="font-size:10px;font-weight:600;color:${cor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ev.summary||'(sem título)'}</div>
+      ${h>30?`<div style="font-size:9px;color:${cor}99">${horaStr}</div>`:''}
+    </div>`;
+  }
+
+  // Semana anterior / próxima
+  const segAnterior = new Date(seg); segAnterior.setDate(seg.getDate()-7);
+  const segProxima  = new Date(seg); segProxima.setDate(seg.getDate()+7);
+
+  // Header da semana
+  const mesLabel = seg.getMonth()===dom.getMonth()
+    ? `${diasNomes[seg.getDay()]} ${seg.getDate()} – ${diasNomes[dom.getDay()]} ${dom.getDate()} de ${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][seg.getMonth()]} ${seg.getFullYear()}`
+    : `${seg.getDate()} ${mesesNomes[seg.getMonth()]} – ${dom.getDate()} ${mesesNomes[dom.getMonth()]} ${dom.getFullYear()}`;
+
+  // Seletor de calendários
+  const calOpts = gcalCals.map(c=>`<option value="${c.id}" ${c.id===gcalSelectedCal?'selected':''}>${c.summary}</option>`).join('');
+
+  let html =
     '<div class="pt">Google Agenda</div>'+
-    '<div class="ps">Sincronizado com sua conta Google · '+gcalEvents.length+' eventos nos próximos 30 dias</div>'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">'+
+    '<button class="btn btns" onclick="gcalViewDate=new Date();carregarSemana(new Date())"><i class="ti ti-calendar"></i> Hoje</button>'+
+    '<button class="btn btns" onclick="carregarSemana(new Date('+segAnterior.getTime()+'))"><i class="ti ti-chevron-left"></i></button>'+
+    '<button class="btn btns" onclick="carregarSemana(new Date('+segProxima.getTime()+'))"><i class="ti ti-chevron-right"></i></button>'+
+    '<span style="font-size:14px;font-weight:600;color:var(--brown)">'+mesLabel+'</span>'+
+    '<div style="margin-left:auto;display:flex;gap:8px">'+
+    '<select class="sel" style="font-size:12px" onchange="gcalSelectedCal=this.value;carregarSemana(gcalViewDate)">'+calOpts+'</select>'+
+    '<button class="btn btns" onclick="carregarSemana(gcalViewDate)"><i class="ti ti-refresh"></i></button>'+
+    '<button class="btn btnb" onclick="abrirNovoEvento()"><i class="ti ti-plus"></i> Novo evento</button>'+
+    '</div></div>'+
 
-    '<div style="display:grid;grid-template-columns:280px 1fr;gap:20px;align-items:start">'+
+    // Grade semanal
+    '<div style="background:var(--white);border:1px solid var(--border);border-radius:var(--radius);overflow:auto;box-shadow:var(--shadow-sm)">'+
 
-    // ── CALENDÁRIO MENSAL ──────────────────────────────────
-    '<div>'+
-    '<div class="dp" style="padding:16px">'+
-
-    // Seletor de calendário
-    '<div style="margin-bottom:12px">'+
-    '<label style="font-size:10px;font-weight:600;color:var(--brown-light);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px">Calendário</label>'+
-    '<select class="sel" style="width:100%;font-size:12px" onchange="gcalSelectedCal=this.value;rGcal()">'+calOpts+'</select></div>'+
-
-    // Navegação mês
-    '<div class="cal-nav">'+
-    '<button class="btn btns" onclick="gcalViewDate=new Date(gcalViewDate.getFullYear(),gcalViewDate.getMonth()-1,1);renderGcal()"><i class="ti ti-chevron-left"></i></button>'+
-    '<span style="font-size:14px;font-weight:600;color:var(--brown)">'+meses[mes]+' '+ano+'</span>'+
-    '<button class="btn btns" onclick="gcalViewDate=new Date(gcalViewDate.getFullYear(),gcalViewDate.getMonth()+1,1);renderGcal()"><i class="ti ti-chevron-right"></i></button>'+
-    '</div>'+
-
-    // Grid dias da semana
-    '<div class="cal-grid">'+
-    diasSem.map(d=>'<div class="cal-day-header">'+d+'</div>').join('')+
-
-    // Dias vazios antes do mês
-    Array(offset).fill('<div class="cal-day other-month"></div>').join('')+
-
-    // Dias do mês
-    Array.from({length:ultimoDia.getDate()},(_,i)=>{
-      const dia = i+1;
-      const data = new Date(ano,mes,dia);
-      const isHoje = data.toDateString()===hoje.toDateString();
-      const temEvento = diasComEvento.has(data.toDateString());
-      return `<div class="cal-day${isHoje?' today':''}${temEvento?' has-event':''}" onclick="gcalFiltrarDia(${ano},${mes},${dia})">${dia}</div>`;
+    // Header dos dias
+    '<div style="display:grid;grid-template-columns:50px repeat(7,1fr);border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--white);z-index:20">'+
+    '<div style="border-right:1px solid var(--border)"></div>'+
+    dias.map(d=>{
+      const isHoje = d.toDateString()===hoje.toDateString();
+      const nomeDia = diasNomes[d.getDay()];
+      const numDia = d.getDate();
+      return `<div style="text-align:center;padding:10px 4px;border-right:1px solid var(--border)">
+        <div style="font-size:10px;color:var(--brown-light);font-weight:600;text-transform:uppercase;letter-spacing:.06em">${nomeDia}</div>
+        <div style="width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:4px auto 0;
+          ${isHoje?'background:var(--gold);color:white;font-weight:700;':'color:var(--brown);'}font-size:15px;font-weight:${isHoje?700:400}">${numDia}</div>
+      </div>`;
     }).join('')+
     '</div>'+
 
-    // Botão novo evento
-    '<button class="btn btnb" style="width:100%;margin-top:12px;justify-content:center;display:flex;gap:8px;align-items:center" onclick="abrirNovoEvento()">'+
-    '<i class="ti ti-plus"></i> Novo evento</button>'+
-    '</div></div>'+
+    // Grid de horas
+    '<div style="display:grid;grid-template-columns:50px repeat(7,1fr);position:relative">'+
 
-    // ── LISTA DE EVENTOS ───────────────────────────────────
-    '<div>'+
-    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'+
-    '<div style="font-size:13px;font-weight:600;color:var(--brown)" id="gcalListTitle">Próximos 30 dias</div>'+
-    '<button class="btn btns" onclick="gcalEvents=[];gcalViewDate=new Date();rGcal()"><i class="ti ti-refresh"></i> Atualizar</button>'+
+    // Coluna de horas
+    '<div style="border-right:1px solid var(--border)">'+
+    HORAS_GRID.map(h=>`<div style="height:${PX_HORA}px;border-bottom:1px solid rgba(201,169,110,.08);display:flex;align-items:flex-start;justify-content:flex-end;padding:2px 6px 0 0">
+      <span style="font-size:10px;color:var(--brown-light)">${String(h).padStart(2,'0')}:00</span></div>`).join('')+
     '</div>'+
-    '<div id="gcalEventList">'+
-    renderEventList(proximos)+
-    '</div></div>'+
-    '</div>'
+
+    // Colunas dos dias
+    dias.map(d=>{
+      const evsDia = porDia[d.toDateString()]||[];
+      const isHoje = d.toDateString()===hoje.toDateString();
+      return `<div style="border-right:1px solid var(--border);position:relative;${isHoje?'background:rgba(201,169,110,.03)':''}">
+        ${HORAS_GRID.map(h=>`<div style="height:${PX_HORA}px;border-bottom:1px solid rgba(201,169,110,.08)" onclick="abrirNovoEventoHora(${d.getFullYear()},${d.getMonth()},${d.getDate()},${h})"></div>`).join('')}
+        ${evsDia.map(ev=>blocoEvento(ev)).join('')}
+      </div>`;
+    }).join('')+
+    '</div></div>';
+
+  set(html);
+
+  // Linha do horário atual
+  setTimeout(()=>{
+    const agora = new Date();
+    const top = (agora.getHours() + agora.getMinutes()/60 - HORAS_GRID[0]) * PX_HORA;
+    // Injeta linha vermelha na coluna de hoje
+    const cols = document.querySelectorAll('[style*="border-right:1px solid var(--border);position:relative"]');
+    const diaHojeIdx = dias.findIndex(d=>d.toDateString()===hoje.toDateString());
+    if(diaHojeIdx>=0 && cols[diaHojeIdx]){
+      const linha = document.createElement('div');
+      linha.style.cssText = `position:absolute;top:${top}px;left:0;right:0;height:2px;background:#EA4335;z-index:15;pointer-events:none`;
+      const circulo = document.createElement('div');
+      circulo.style.cssText = 'position:absolute;left:-4px;top:-4px;width:10px;height:10px;border-radius:50%;background:#EA4335';
+      linha.appendChild(circulo);
+      cols[diaHojeIdx].appendChild(linha);
+    }
+  }, 100);
+}
+
+function abrirNovoEventoHora(ano, mes, dia, hora){
+  const pad = n=>String(n).padStart(2,'0');
+  const inicio = `${ano}-${pad(mes+1)}-${pad(dia)}T${pad(hora)}:00`;
+  const fim    = `${ano}-${pad(mes+1)}-${pad(dia)}T${pad(hora+1)}:00`;
+  const calOpts = gcalCals.map(c=>`<option value="${c.id}">${c.summary}</option>`).join('');
+  abrirModal(
+    '<div class="mdt"><i class="ti ti-calendar-plus" style="color:#4285F4;margin-right:8px"></i>Novo evento</div>'+
+    '<label class="fl">Título *</label><input class="fi" id="ev_titulo" placeholder="Ex: Reposição Ana · Turma 08H" autofocus>'+
+    '<label class="fl">Calendário</label><select class="fi" id="ev_cal">'+calOpts+'</select>'+
+    '<div class="fr2"><div><label class="fl">Início</label><input class="fi" id="ev_inicio" type="datetime-local" value="'+inicio+'"></div>'+
+    '<div><label class="fl">Fim</label><input class="fi" id="ev_fim" type="datetime-local" value="'+fim+'"></div></div>'+
+    '<label class="fl">Local</label><input class="fi" id="ev_local" placeholder="Studio 1">'+
+    '<label class="fl">Descrição</label><textarea class="fi" id="ev_desc" rows="2" placeholder="Observações…" style="resize:vertical"></textarea>'+
+    '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button>'+
+    '<button class="btn btnb" id="ev_btn" onclick="salvarEvento()"><i class="ti ti-check"></i> Criar</button></div>'
   );
-}
-
-function renderEventList(eventos){
-  if(!eventos.length) return '<div style="text-align:center;padding:32px;color:var(--brown-light)"><i class="ti ti-calendar-off" style="font-size:32px;opacity:.3;display:block;margin-bottom:8px"></i>Nenhum evento encontrado</div>';
-
-  const cores = ['#4285F4','#EA4335','#FBBC05','#34A853','#B8924A','#7A5230','#6B7A2E'];
-  return eventos.map((e,i)=>{
-    const startRaw = e.start?.dateTime||e.start?.date;
-    const endRaw   = e.end?.dateTime||e.end?.date;
-    const start = startRaw ? new Date(startRaw) : null;
-    const end   = endRaw   ? new Date(endRaw)   : null;
-    const allDay = !e.start?.dateTime;
-    const cor = e.colorId ? cores[parseInt(e.colorId)%cores.length] : cores[i%cores.length];
-
-    const dataStr = start ? start.toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short'}) : '—';
-    const horaStr = allDay ? 'Dia inteiro' :
-      (start?start.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'')+'–'+
-      (end  ?end.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'');
-
-    return '<div class="cal-event">'+
-      '<div class="cal-dot" style="background:'+cor+'"></div>'+
-      '<div style="flex:1">'+
-      '<div class="cal-title">'+e.summary+'</div>'+
-      '<div class="cal-desc">'+dataStr+' · '+horaStr+
-        (e.location?' · <i class="ti ti-map-pin" style="font-size:10px"></i> '+e.location:'')+
-        (e.description?' · '+e.description.slice(0,60):'')+'</div>'+
-      '</div>'+
-      '</div>';
-  }).join('');
-}
-
-function gcalFiltrarDia(ano, mes, dia){
-  const data = new Date(ano, mes, dia);
-  const titulo = data.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'});
-  const eventosDia = gcalEvents.filter(e=>{
-    const d = e.start?.dateTime||e.start?.date;
-    return d && new Date(d).toDateString()===data.toDateString();
-  });
-  const el = document.getElementById('gcalEventList');
-  const tit = document.getElementById('gcalListTitle');
-  if(el){ el.innerHTML = renderEventList(eventosDia); }
-  if(tit){ tit.textContent = eventosDia.length+' evento(s) em '+titulo; }
 }
 
 function abrirNovoEvento(){
   const agora = new Date();
-  const dd = String(agora.getDate()).padStart(2,'0');
-  const mm = String(agora.getMonth()+1).padStart(2,'0');
-  const yy = agora.getFullYear();
-  const hh = String(agora.getHours()).padStart(2,'0');
-  const mi = String(agora.getMinutes()).padStart(2,'0');
-  const calOpts = gcalCals.map(c=>`<option value="${c.id}">${c.summary}</option>`).join('');
+  abrirNovoEventoHora(agora.getFullYear(), agora.getMonth(), agora.getDate(), agora.getHours());
+}
+
+function abrirEditarEvento(idx){
+  const ev = gcalEvents[idx];
+  if(!ev) return;
+  window._evEditando = ev;
+  window._evEditIdx = idx;
+
+  const sRaw = ev.start?.dateTime||ev.start?.date||'';
+  const eRaw = ev.end?.dateTime||ev.end?.date||'';
+  const allDay = !ev.start?.dateTime;
+
+  function toLocal(iso){
+    if(!iso) return '';
+    const d = new Date(iso);
+    const pad = n=>String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  const cor = ev._calColor||'#4285F4';
+  const isFisio = (ev.summary||'').toLowerCase().startsWith('fisio');
 
   abrirModal(
-    '<div class="mdt"><i class="ti ti-calendar-plus" style="color:#4285F4;margin-right:8px"></i>Novo evento na Agenda</div>'+
-    '<label class="fl">Título *</label><input class="fi" id="ev_titulo" placeholder="Ex: Reposição Ana — QUA 08H">'+
-    '<label class="fl">Calendário</label><select class="fi" id="ev_cal">'+calOpts+'</select>'+
-    '<div class="fr2">'+
-      '<div><label class="fl">Data e hora início</label><input class="fi" id="ev_inicio" type="datetime-local" value="'+yy+'-'+mm+'-'+dd+'T'+hh+':'+mi+'"></div>'+
-      '<div><label class="fl">Data e hora fim</label><input class="fi" id="ev_fim" type="datetime-local" value="'+yy+'-'+mm+'-'+dd+'T'+hh+':'+mi+'"></div>'+
-    '</div>'+
-    '<label class="fl">Local (opcional)</label><input class="fi" id="ev_local" placeholder="Ex: Lm Estudio — Studio 1">'+
-    '<label class="fl">Descrição (opcional)</label><textarea class="fi" id="ev_desc" rows="2" placeholder="Observações, aluno, turma…" style="resize:vertical"></textarea>'+
+    `<div class="mdt"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${cor};margin-right:8px;vertical-align:middle"></span>Editar evento</div>`+
+    '<label class="fl">Título *</label><input class="fi" id="ev_titulo" value="'+((ev.summary||'').replace(/"/g,'&quot;'))+'">'+
+    '<div class="fr2"><div><label class="fl">Início</label><input class="fi" id="ev_inicio" type="datetime-local" value="'+toLocal(sRaw)+'"></div>'+
+    '<div><label class="fl">Fim</label><input class="fi" id="ev_fim" type="datetime-local" value="'+toLocal(eRaw)+'"></div></div>'+
+    '<label class="fl">Local</label><input class="fi" id="ev_local" value="'+(ev.location||'')+'">'+
+    '<label class="fl">Descrição</label><textarea class="fi" id="ev_desc" rows="2" style="resize:vertical">'+(ev.description||'')+'</textarea>'+
+    (ev.recurrence?'<div style="background:rgba(201,169,110,.1);border:1px solid rgba(201,169,110,.2);border-radius:8px;padding:10px;font-size:12px;color:var(--brown-light);margin-bottom:8px"><i class="ti ti-repeat" style="margin-right:5px"></i>Este é um evento recorrente. A edição altera apenas esta ocorrência.</div>':'')+
     '<div class="mdf">'+
-      '<button class="btn" onclick="fecharModal()">Cancelar</button>'+
-      '<button class="btn btnb" id="ev_btn" onclick="salvarEvento()"><i class="ti ti-check"></i> Criar evento</button>'+
+    '<button class="btn" style="color:#8B2E1A;border-color:rgba(139,46,26,.3)" onclick="excluirEvento()"><i class="ti ti-trash"></i> Excluir</button>'+
+    '<button class="btn" onclick="fecharModal()">Cancelar</button>'+
+    '<button class="btn btnb" id="ev_btn" onclick="atualizarEvento()"><i class="ti ti-check"></i> Salvar</button>'+
     '</div>'
   );
 }
 
-async function salvarEvento(){
-  const titulo = document.getElementById('ev_titulo').value.trim();
-  if(!titulo){ alert('Informe o título do evento.'); return; }
+async function atualizarEvento(){
+  const ev  = window._evEditando;
+  if(!ev) return;
   const btn = document.getElementById('ev_btn');
-  btn.disabled=true; btn.textContent='Criando…';
+  btn.disabled=true; btn.textContent='Salvando…';
 
+  const titulo = document.getElementById('ev_titulo').value.trim();
   const inicio = document.getElementById('ev_inicio').value;
   const fim    = document.getElementById('ev_fim').value;
-  const calId  = document.getElementById('ev_cal').value||'primary';
 
+  const body = {
+    summary:     titulo,
+    location:    document.getElementById('ev_local').value||undefined,
+    description: document.getElementById('ev_desc').value||undefined,
+    start: { dateTime: new Date(inicio).toISOString(), timeZone:'America/Sao_Paulo' },
+    end:   { dateTime: new Date(fim||inicio).toISOString(), timeZone:'America/Sao_Paulo' },
+  };
+
+  try {
+    const calId = ev._calId||'primary';
+    // Se recorrente, edita só esta ocorrência
+    const evId = ev.recurringEventId ? ev.id : ev.id;
+    await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${evId}`,{
+      method:'PATCH',
+      headers:{ Authorization:'Bearer '+gcalToken, 'Content-Type':'application/json' },
+      body: JSON.stringify(body)
+    });
+    await registrarLog('editou evento', 'google_agenda', titulo+' em '+new Date(inicio).toLocaleDateString('pt-BR'));
+    fecharModal();
+    carregarSemana(gcalViewDate);
+  } catch(e){
+    btn.disabled=false; btn.textContent='Salvar';
+    alert('Erro ao salvar: '+e.message);
+  }
+}
+
+async function excluirEvento(){
+  const ev = window._evEditando;
+  if(!ev) return;
+  if(!confirm('Excluir "'+ev.summary+'"?')) return;
+  try {
+    const calId = ev._calId||'primary';
+    await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${ev.id}`,{
+      method:'DELETE',
+      headers:{ Authorization:'Bearer '+gcalToken }
+    });
+    await registrarLog('excluiu evento', 'google_agenda', ev.summary);
+    fecharModal();
+    carregarSemana(gcalViewDate);
+  } catch(e){ alert('Erro ao excluir: '+e.message); }
+}
+
+async function salvarEvento(){
+  const titulo = document.getElementById('ev_titulo').value.trim();
+  if(!titulo){ alert('Informe o título.'); return; }
+  const btn = document.getElementById('ev_btn');
+  btn.disabled=true; btn.textContent='Criando…';
+  const inicio = document.getElementById('ev_inicio').value;
+  const fim    = document.getElementById('ev_fim').value;
+  const calId  = document.getElementById('ev_cal')?.value||'primary';
   const evento = {
     summary: titulo,
     location: document.getElementById('ev_local').value||undefined,
     description: document.getElementById('ev_desc').value||undefined,
-    start: { dateTime: new Date(inicio).toISOString(), timeZone: 'America/Sao_Paulo' },
-    end:   { dateTime: new Date(fim||inicio).toISOString(), timeZone: 'America/Sao_Paulo' },
+    start: { dateTime: new Date(inicio).toISOString(), timeZone:'America/Sao_Paulo' },
+    end:   { dateTime: new Date(fim||inicio).toISOString(), timeZone:'America/Sao_Paulo' },
   };
-
   try {
     await gcalCreateEvent(calId, evento);
     await registrarLog('criou evento', 'google_agenda', titulo+' em '+new Date(inicio).toLocaleDateString('pt-BR'));
     fecharModal();
-    rGcal(); // recarrega
+    carregarSemana(gcalViewDate);
   } catch(e){
-    btn.disabled=false; btn.textContent='Criar evento';
-    alert('Erro ao criar evento: '+e.message);
+    btn.disabled=false; btn.textContent='Criar';
+    alert('Erro: '+e.message);
   }
 }
+
+function renderGcal(){ renderSemana(gcalViewDate, new Date(gcalViewDate.getTime()+6*86400000)); }
+function gcalFiltrarDia(){ }
+function renderEventList(){ return ''; }
 
 // ═══════════════════════════════════════════════════════════
 // DADOS — PILATES
