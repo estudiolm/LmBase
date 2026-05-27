@@ -719,6 +719,7 @@ select.fi { cursor: pointer; }
   <button class="ni loja" onclick="nav('l_clientes')"><i class="ti ti-users"></i>Clientes</button>
   <div class="nsep" id="sepRelatorios">relatórios</div>
   <button class="ni" id="btnFinGeral" style="border-left-color:#B8924A" onclick="nav('fin_geral')"><i class="ti ti-cash"></i>Financeiro Geral</button>
+  <button class="ni" id="btnLogs" style="border-left-color:#3D5C3A" onclick="nav('logs')"><i class="ti ti-history"></i>Histórico</button>
 
   <!-- badge do usuário no rodapé da sidebar -->
   <div style="margin-top:auto;padding:14px 16px;border-top:1px solid rgba(184,146,74,.15)">
@@ -863,7 +864,9 @@ function aplicarPermissoes(){
 
   const finGeralBtn = document.getElementById('btnFinGeral');
   const sepRel = document.getElementById('sepRelatorios');
+  const logsBtn = document.getElementById('btnLogs');
   if(finGeralBtn) finGeralBtn.style.display = perm.verFinGeral ? '' : 'none';
+  if(logsBtn) logsBtn.style.display = perm.verFinGeral ? '' : 'none';
   if(sepRel) sepRel.style.display = perm.verFinGeral ? '' : 'none';
 }
 
@@ -872,6 +875,7 @@ function checarPermissao(pagina){
   const perm = PERMISSOES[usuarioAtual.perfil] || PERMISSOES.recepcao;
   if(pagina==='p_fin' && !perm.verFinanceiro) return false;
   if(pagina==='fin_geral' && !perm.verFinGeral) return false;
+  if(pagina==='logs' && !perm.verFinGeral) return false;
   return true;
 }
 
@@ -1420,7 +1424,8 @@ function nav(p){
     f_dash:navFDash, f_pacientes:navFPacientes,
     l_dash:navLDash, l_vendas:navLVendas, l_estoque:navLEstoque,
     l_encomendas:navLEncomendas, l_clientes:navLClientes,
-    fin_geral:rFinGeral
+    fin_geral:rFinGeral,
+    logs:rLogs
   };
   if(fn[p]) fn[p]();
 }
@@ -2286,6 +2291,148 @@ async function rFinGeral(){
   ativos.filter(a=>!a.px||a.px==='parceria').map(a=>'<tr><td>'+ncell(a)+'</td><td>'+a.pl+'</td><td style="color:#7A5230">'+(a.h||'—')+'</td><td style="color:#B8924A;font-weight:600">R$ '+a.v+'</td></tr>').join('')+
   '</tbody></table></div>':'')
   );
+}
+
+// ═══════════════════════════════════════════════════════════
+// HISTÓRICO DE ALTERAÇÕES
+// ═══════════════════════════════════════════════════════════
+async function rLogs(){
+  set(
+    '<div class="pt">Histórico de Alterações</div>'+
+    '<div class="ps">Registro de todas as ações realizadas no sistema</div>'+
+    '<div style="display:flex;align-items:center;justify-content:center;height:180px;flex-direction:column;gap:10px;color:var(--brown-light)">'+
+    '<div style="width:28px;height:28px;border:3px solid var(--cream-dark);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite"></div>'+
+    '<span style="font-size:13px">Carregando histórico…</span></div>'
+  );
+
+  let rows = [];
+  try { rows = await sbGet('logs_alteracoes','id'); } catch(e){}
+
+  // Ordena do mais recente
+  rows.sort((a,b)=> new Date(b.criado_em) - new Date(a.criado_em));
+
+  // Filtros
+  const usuarios = [...new Set(rows.map(r=>r.usuario))].sort();
+  const tabelas  = [...new Set(rows.map(r=>r.tabela))].sort();
+
+  function fmtDt(dt){
+    if(!dt) return '—';
+    const d = new Date(dt);
+    return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  }
+
+  function corAcao(acao){
+    if(!acao) return 'bx';
+    if(acao.includes('cadastrou')) return 'bg';
+    if(acao.includes('registrou')) return 'bb';
+    if(acao.includes('editou')) return 'ba';
+    if(acao.includes('excluiu')) return 'br';
+    if(acao.includes('login')) return 'bav';
+    return 'bx';
+  }
+
+  function iconeTabela(tab){
+    const m = {
+      alunos:'ti-users', pagamentos:'ti-cash', vendas:'ti-receipt',
+      estoque:'ti-package', encomendas:'ti-truck-delivery',
+      pacientes_fisio:'ti-heart-rate-monitor', sessoes_fisio:'ti-activity',
+      sistema:'ti-login', logs_alteracoes:'ti-history'
+    };
+    return m[tab]||'ti-database';
+  }
+
+  // Stats rápidos
+  const hoje = new Date().toDateString();
+  const hojeCount = rows.filter(r=>new Date(r.criado_em).toDateString()===hoje).length;
+  const porUsuario = {};
+  rows.forEach(r=>{ porUsuario[r.usuario]=(porUsuario[r.usuario]||0)+1; });
+
+  set(
+    '<div class="pt">Histórico de Alterações</div>'+
+    '<div class="ps">Todas as ações registradas no sistema · <span style="color:var(--gold-dark);font-weight:500">'+rows.length+' registros</span></div>'+
+
+    // Cards de resumo
+    '<div class="metrics3" style="margin-bottom:20px">'+
+    '<div class="mc"><div class="lb">Total de ações</div><div class="vl vi">'+rows.length+'</div><div class="s2">desde o início</div></div>'+
+    '<div class="mc"><div class="lb">Ações hoje</div><div class="vl va">'+hojeCount+'</div><div class="s2">'+new Date().toLocaleDateString('pt-BR')+'</div></div>'+
+    '<div class="mc"><div class="lb">Usuários ativos</div><div class="vl vg">'+Object.keys(porUsuario).length+'</div><div class="s2">'+Object.entries(porUsuario).map(([u,n])=>u+' ('+n+')').join(' · ')+'</div></div>'+
+    '</div>'+
+
+    // Filtros
+    '<div class="tb" style="margin-bottom:16px">'+
+    '<input class="srch" id="logFt" placeholder="Buscar descrição…" oninput="filtrarLogs()" style="width:240px">'+
+    '<select class="sel" id="logUser" onchange="filtrarLogs()">'+
+      '<option value="">Todos os usuários</option>'+
+      usuarios.map(u=>'<option>'+u+'</option>').join('')+
+    '</select>'+
+    '<select class="sel" id="logTab" onchange="filtrarLogs()">'+
+      '<option value="">Todas as seções</option>'+
+      tabelas.map(t=>'<option>'+t+'</option>').join('')+
+    '</select>'+
+    '<span style="margin-left:auto;font-size:12px;color:var(--brown-light)" id="logCount">'+rows.length+' registros</span>'+
+    '</div>'+
+
+    // Tabela
+    '<div class="tw" id="logTabela">'+
+    '<table><thead><tr>'+
+    '<th>Data / Hora</th><th>Usuário</th><th>Perfil</th><th>Ação</th><th>Seção</th><th>Descrição</th>'+
+    '</tr></thead>'+
+    '<tbody id="logBody">'+
+    renderLogRows(rows)+
+    '</tbody></table></div>'
+  );
+
+  // Guarda rows globalmente para filtrar
+  window._logsCache = rows;
+}
+
+function renderLogRows(rows){
+  function fmtDt(dt){
+    if(!dt) return '—';
+    const d = new Date(dt);
+    return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  }
+  function corAcao(acao){
+    if(!acao) return 'bx';
+    if(acao.includes('cadastrou')) return 'bg';
+    if(acao.includes('registrou')) return 'bb';
+    if(acao.includes('editou')) return 'ba';
+    if(acao.includes('excluiu')) return 'br';
+    if(acao.includes('login')) return 'bav';
+    return 'bx';
+  }
+  function iconeTabela(tab){
+    const m={alunos:'ti-users',pagamentos:'ti-cash',vendas:'ti-receipt',estoque:'ti-package',encomendas:'ti-truck-delivery',pacientes_fisio:'ti-heart-rate-monitor',sessoes_fisio:'ti-activity',sistema:'ti-login'};
+    return m[tab]||'ti-database';
+  }
+  if(!rows.length) return '<tr><td colspan="6" style="text-align:center;padding:28px;color:var(--brown-light)"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:8px;opacity:.3"></i>Nenhum registro encontrado</td></tr>';
+  return rows.map(r=>
+    '<tr>'+
+    '<td style="color:var(--brown-light);font-size:11px;white-space:nowrap">'+fmtDt(r.criado_em)+'</td>'+
+    '<td><strong style="color:var(--brown)">'+r.usuario+'</strong></td>'+
+    '<td><span class="bdg '+(r.perfil==='admin'?'ba':'bav')+'">'+( r.perfil==='admin'?'Admin':'Recepção')+'</span></td>'+
+    '<td><span class="bdg '+corAcao(r.acao)+'">'+r.acao+'</span></td>'+
+    '<td><span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--brown-light)">'+
+    '<i class="ti '+iconeTabela(r.tabela)+'" style="font-size:13px"></i>'+r.tabela+'</span></td>'+
+    '<td style="color:var(--brown-light);max-width:260px;overflow:hidden;text-overflow:ellipsis">'+( r.descricao||'—')+'</td>'+
+    '</tr>'
+  ).join('');
+}
+
+function filtrarLogs(){
+  const ft  = (document.getElementById('logFt')?.value||'').toLowerCase();
+  const usr = document.getElementById('logUser')?.value||'';
+  const tab = document.getElementById('logTab')?.value||'';
+  const all = window._logsCache||[];
+  const filtrado = all.filter(r=>
+    (!ft || (r.descricao||'').toLowerCase().includes(ft) || (r.acao||'').toLowerCase().includes(ft)) &&
+    (!usr || r.usuario===usr) &&
+    (!tab || r.tabela===tab)
+  );
+  const body = document.getElementById('logBody');
+  const cnt  = document.getElementById('logCount');
+  if(body) body.innerHTML = renderLogRows(filtrado);
+  if(cnt)  cnt.textContent = filtrado.length+' registros';
 }
 
 // ═══════════════════════════════════════════════════════════
