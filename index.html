@@ -2980,7 +2980,7 @@ async function rFinGeral(){
 async function rLogs(){
   set(
     '<div class="pt">Histórico de Alterações</div>'+
-    '<div class="ps">Registro de todas as ações realizadas no sistema</div>'+
+    '<div class="ps">Registro de ações · foco em pagamentos e alterações de aulas</div>'+
     '<div style="display:flex;align-items:center;justify-content:center;height:180px;flex-direction:column;gap:10px;color:var(--brown-light)">'+
     '<div style="width:28px;height:28px;border:3px solid var(--cream-dark);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite"></div>'+
     '<span style="font-size:13px">Carregando histórico…</span></div>'
@@ -2988,128 +2988,220 @@ async function rLogs(){
 
   let rows = [];
   try { rows = await sbGet('logs_alteracoes','id'); } catch(e){}
+  rows.sort((a,b)=>new Date(b.criado_em)-new Date(a.criado_em));
+  window._logsCache = rows;
 
-  // Ordena do mais recente
-  rows.sort((a,b)=> new Date(b.criado_em) - new Date(a.criado_em));
+  renderLogsView(rows);
+}
 
-  // Filtros
-  const usuarios = [...new Set(rows.map(r=>r.usuario))].sort();
-  const tabelas  = [...new Set(rows.map(r=>r.tabela))].sort();
+function renderLogsView(rows){
+  const hoje     = new Date(); hoje.setHours(0,0,0,0);
+  const ontem    = new Date(hoje); ontem.setDate(hoje.getDate()-1);
+  const semana   = new Date(hoje); semana.setDate(hoje.getDate()-7);
 
   function fmtDt(dt){
     if(!dt) return '—';
     const d = new Date(dt);
-    return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    const dHoje  = d.toDateString()===hoje.toDateString();
+    const dOntem = d.toDateString()===ontem.toDateString();
+    const hora   = d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    if(dHoje)  return '<span style="color:var(--gold-dark);font-weight:500">Hoje '+hora+'</span>';
+    if(dOntem) return '<span style="color:var(--brown-light)">Ontem '+hora+'</span>';
+    return d.toLocaleDateString('pt-BR')+' '+hora;
   }
 
-  function corAcao(acao){
-    if(!acao) return 'bx';
-    if(acao.includes('cadastrou')) return 'bg';
-    if(acao.includes('registrou')) return 'bb';
-    if(acao.includes('editou')) return 'ba';
-    if(acao.includes('excluiu')) return 'br';
-    if(acao.includes('login')) return 'bav';
-    return 'bx';
+  function icone(tab, acao){
+    if(tab==='pagamentos') return {i:'ti-cash',c:'#16a34a',bg:'rgba(22,163,74,.1)'};
+    if(tab==='google_agenda'||acao?.includes('evento')) return {i:'ti-calendar-event',c:'#4285F4',bg:'rgba(66,133,244,.1)'};
+    if(tab==='alunos') return {i:'ti-users',c:'#B8924A',bg:'rgba(184,146,74,.1)'};
+    if(tab==='vendas') return {i:'ti-receipt',c:'#7A5230',bg:'rgba(122,82,48,.1)'};
+    if(tab==='estoque') return {i:'ti-package',c:'#6B7A2E',bg:'rgba(107,122,46,.1)'};
+    if(tab==='encomendas') return {i:'ti-truck-delivery',c:'#8B6914',bg:'rgba(139,105,20,.1)'};
+    if(tab==='pacientes_fisio'||tab==='sessoes_fisio') return {i:'ti-heart-rate-monitor',c:'#4A6B2E',bg:'rgba(74,107,46,.1)'};
+    if(tab==='sistema') return {i:'ti-login',c:'#888',bg:'rgba(128,128,128,.08)'};
+    return {i:'ti-database',c:'#888',bg:'rgba(128,128,128,.08)'};
   }
 
-  function iconeTabela(tab){
-    const m = {
-      alunos:'ti-users', pagamentos:'ti-cash', vendas:'ti-receipt',
-      estoque:'ti-package', encomendas:'ti-truck-delivery',
-      pacientes_fisio:'ti-heart-rate-monitor', sessoes_fisio:'ti-activity',
-      sistema:'ti-login', logs_alteracoes:'ti-history'
-    };
-    return m[tab]||'ti-database';
-  }
+  // Usuários únicos
+  const usuarios = [...new Set(rows.map(r=>r.usuario))].sort();
+  const tabelas  = [...new Set(rows.map(r=>r.tabela))].sort();
 
-  // Stats rápidos
-  const hoje = new Date().toDateString();
-  const hojeCount = rows.filter(r=>new Date(r.criado_em).toDateString()===hoje).length;
-  const porUsuario = {};
-  rows.forEach(r=>{ porUsuario[r.usuario]=(porUsuario[r.usuario]||0)+1; });
+  // Stats
+  const hojeCount  = rows.filter(r=>new Date(r.criado_em)>=hoje).length;
+  const pgtos      = rows.filter(r=>r.tabela==='pagamentos');
+  const agendaEv   = rows.filter(r=>r.tabela==='google_agenda');
+  const vitoria    = rows.filter(r=>r.perfil==='recepcao');
+
+  // Últimos pagamentos registrados pela Vitória
+  const ultPgtos = pgtos.filter(r=>r.perfil==='recepcao').slice(0,5);
+  // Últimas alterações de agenda
+  const ultAgenda = agendaEv.filter(r=>r.perfil==='recepcao').slice(0,5);
 
   set(
     '<div class="pt">Histórico de Alterações</div>'+
-    '<div class="ps">Todas as ações registradas no sistema · <span style="color:var(--gold-dark);font-weight:500">'+rows.length+' registros</span></div>'+
+    '<div class="ps">Ações registradas no sistema · <span style="color:var(--gold-dark);font-weight:500">'+rows.length+' registros</span></div>'+
 
-    // Cards de resumo
-    '<div class="metrics3" style="margin-bottom:20px">'+
-    '<div class="mc"><div class="lb">Total de ações</div><div class="vl vi">'+rows.length+'</div><div class="s2">desde o início</div></div>'+
-    '<div class="mc"><div class="lb">Ações hoje</div><div class="vl va">'+hojeCount+'</div><div class="s2">'+new Date().toLocaleDateString('pt-BR')+'</div></div>'+
-    '<div class="mc"><div class="lb">Usuários ativos</div><div class="vl vg">'+Object.keys(porUsuario).length+'</div><div class="s2">'+Object.entries(porUsuario).map(([u,n])=>u+' ('+n+')').join(' · ')+'</div></div>'+
+    // ── CARDS RESUMO ──────────────────────────────────────
+    '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:20px">'+
+    cardLog('Total de ações','vi',rows.length,'desde o início','ti-list')+
+    cardLog('Hoje','va',hojeCount,new Date().toLocaleDateString('pt-BR'),'ti-calendar-today')+
+    cardLog('Pagamentos registrados','vg',pgtos.length,'pela recepção: '+pgtos.filter(r=>r.perfil==='recepcao').length,'ti-cash')+
+    cardLog('Alterações de agenda','vi',agendaEv.length,'eventos criados/editados','ti-calendar-event')+
     '</div>'+
 
-    // Filtros
-    '<div class="tb" style="margin-bottom:16px">'+
-    '<input class="srch" id="logFt" placeholder="Buscar descrição…" oninput="filtrarLogs()" style="width:240px">'+
+    // ── DESTAQUES ────────────────────────────────────────
+    (vitoria.length>0?
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">'+
+
+    // Últimos pagamentos pela Vitória
+    '<div><div style="font-size:11px;font-weight:600;color:#16a34a;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
+    '<i class="ti ti-cash"></i> Últimos pagamentos — Vitória</div>'+
+    (ultPgtos.length?
+    '<div style="background:var(--glass);border:1px solid rgba(22,163,74,.2);border-radius:12px;overflow:hidden">'+
+    ultPgtos.map(r=>'<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(22,163,74,.08)">'+
+      '<div style="width:32px;height:32px;border-radius:8px;background:rgba(22,163,74,.1);display:flex;align-items:center;justify-content:center;flex-shrink:0">'+
+      '<i class="ti ti-cash" style="color:#16a34a;font-size:15px"></i></div>'+
+      '<div style="flex:1"><div style="font-size:13px;font-weight:500;color:var(--brown)">'+r.descricao+'</div>'+
+      '<div style="font-size:11px;color:var(--brown-light);margin-top:1px">'+fmtDt(r.criado_em)+'</div></div>'+
+      '</div>').join('')+
+    '</div>':
+    '<div style="padding:20px;text-align:center;color:var(--brown-light);font-size:12px;background:var(--glass);border:1px solid var(--border);border-radius:12px">Nenhum pagamento registrado</div>')+
+    '</div>'+
+
+    // Últimas alterações de agenda
+    '<div><div style="font-size:11px;font-weight:600;color:#4285F4;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
+    '<i class="ti ti-calendar-event"></i> Últimas alterações de agenda — Vitória</div>'+
+    (ultAgenda.length?
+    '<div style="background:var(--glass);border:1px solid rgba(66,133,244,.2);border-radius:12px;overflow:hidden">'+
+    ultAgenda.map(r=>'<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(66,133,244,.08)">'+
+      '<div style="width:32px;height:32px;border-radius:8px;background:rgba(66,133,244,.1);display:flex;align-items:center;justify-content:center;flex-shrink:0">'+
+      '<i class="ti ti-calendar-event" style="color:#4285F4;font-size:15px"></i></div>'+
+      '<div style="flex:1"><div style="font-size:13px;font-weight:500;color:var(--brown)">'+r.acao+': '+r.descricao+'</div>'+
+      '<div style="font-size:11px;color:var(--brown-light);margin-top:1px">'+fmtDt(r.criado_em)+'</div></div>'+
+      '</div>').join('')+
+    '</div>':
+    '<div style="padding:20px;text-align:center;color:var(--brown-light);font-size:12px;background:var(--glass);border:1px solid var(--border);border-radius:12px">Nenhuma alteração de agenda</div>')+
+    '</div>'+
+    '</div>':'')+ // fim destaques
+
+    // ── FILTROS ───────────────────────────────────────────
+    '<div class="tb" style="margin-bottom:12px;flex-wrap:wrap;gap:8px">'+
+    '<input class="srch" id="logFt" placeholder="Buscar…" oninput="filtrarLogs()" style="width:200px">'+
     '<select class="sel" id="logUser" onchange="filtrarLogs()">'+
       '<option value="">Todos os usuários</option>'+
       usuarios.map(u=>'<option>'+u+'</option>').join('')+
     '</select>'+
     '<select class="sel" id="logTab" onchange="filtrarLogs()">'+
       '<option value="">Todas as seções</option>'+
-      tabelas.map(t=>'<option>'+t+'</option>').join('')+
+      '<option value="pagamentos">💰 Pagamentos</option>'+
+      '<option value="google_agenda">📅 Agenda</option>'+
+      '<option value="alunos">👥 Alunos</option>'+
+      tabelas.filter(t=>!['pagamentos','google_agenda','alunos'].includes(t)).map(t=>'<option>'+t+'</option>').join('')+
+    '</select>'+
+    '<select class="sel" id="logPeriodo" onchange="filtrarLogs()">'+
+      '<option value="">Todo período</option>'+
+      '<option value="hoje">Hoje</option>'+
+      '<option value="semana">Esta semana</option>'+
+      '<option value="mes">Este mês</option>'+
     '</select>'+
     '<span style="margin-left:auto;font-size:12px;color:var(--brown-light)" id="logCount">'+rows.length+' registros</span>'+
     '</div>'+
 
-    // Tabela
-    '<div class="tw" id="logTabela">'+
-    '<table><thead><tr>'+
-    '<th>Data / Hora</th><th>Usuário</th><th>Perfil</th><th>Ação</th><th>Seção</th><th>Descrição</th>'+
-    '</tr></thead>'+
-    '<tbody id="logBody">'+
+    // ── TABELA COMPLETA ───────────────────────────────────
+    '<div class="tw"><table><thead><tr>'+
+    '<th>Data / Hora</th><th>Usuário</th><th>Tipo</th><th>Ação</th><th>Detalhes</th>'+
+    '</tr></thead><tbody id="logBody">'+
     renderLogRows(rows)+
     '</tbody></table></div>'
   );
 
-  // Guarda rows globalmente para filtrar
   window._logsCache = rows;
+}
+
+function cardLog(lb,cor,vl,s2,icon){
+  return '<div class="mc" style="display:flex;align-items:center;gap:12px">'+
+    '<div style="width:36px;height:36px;border-radius:10px;background:rgba(184,146,74,.1);display:flex;align-items:center;justify-content:center;flex-shrink:0">'+
+    '<i class="ti '+icon+'" style="font-size:18px;color:var(--gold-dark)"></i></div>'+
+    '<div><div class="lb">'+lb+'</div><div class="vl '+cor+'" style="font-size:22px">'+vl+'</div><div class="s2">'+s2+'</div></div></div>';
 }
 
 function renderLogRows(rows){
   function fmtDt(dt){
     if(!dt) return '—';
     const d = new Date(dt);
-    return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const ontem = new Date(hoje); ontem.setDate(hoje.getDate()-1);
+    const hora = d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    if(d.toDateString()===hoje.toDateString()) return '<span style="color:var(--gold-dark);font-weight:500">Hoje '+hora+'</span>';
+    if(d.toDateString()===ontem.toDateString()) return 'Ontem '+hora;
+    return d.toLocaleDateString('pt-BR')+' '+hora;
   }
-  function corAcao(acao){
-    if(!acao) return 'bx';
-    if(acao.includes('cadastrou')) return 'bg';
-    if(acao.includes('registrou')) return 'bb';
-    if(acao.includes('editou')) return 'ba';
-    if(acao.includes('excluiu')) return 'br';
-    if(acao.includes('login')) return 'bav';
-    return 'bx';
+
+  function iconeInfo(tab,acao){
+    if(tab==='pagamentos') return {i:'ti-cash',c:'#16a34a',bg:'rgba(22,163,74,.1)',label:'Pagamento'};
+    if(tab==='google_agenda') return {i:'ti-calendar-event',c:'#4285F4',bg:'rgba(66,133,244,.1)',label:'Agenda'};
+    if(tab==='alunos') return {i:'ti-users',c:'#B8924A',bg:'rgba(184,146,74,.1)',label:'Aluno'};
+    if(tab==='vendas') return {i:'ti-receipt',c:'#7A5230',bg:'rgba(122,82,48,.1)',label:'Venda'};
+    if(tab==='estoque') return {i:'ti-package',c:'#6B7A2E',bg:'rgba(107,122,46,.1)',label:'Estoque'};
+    if(tab==='encomendas') return {i:'ti-truck-delivery',c:'#8B6914',bg:'rgba(139,105,20,.1)',label:'Encomenda'};
+    if(tab==='sessoes_fisio'||tab==='pacientes_fisio') return {i:'ti-heart-rate-monitor',c:'#4A6B2E',bg:'rgba(74,107,46,.1)',label:'Fisio'};
+    if(tab==='sistema') return {i:'ti-login',c:'#888',bg:'rgba(128,128,128,.08)',label:'Sistema'};
+    return {i:'ti-database',c:'#888',bg:'rgba(128,128,128,.08)',label:tab};
   }
-  function iconeTabela(tab){
-    const m={alunos:'ti-users',pagamentos:'ti-cash',vendas:'ti-receipt',estoque:'ti-package',encomendas:'ti-truck-delivery',pacientes_fisio:'ti-heart-rate-monitor',sessoes_fisio:'ti-activity',sistema:'ti-login'};
-    return m[tab]||'ti-database';
-  }
-  if(!rows.length) return '<tr><td colspan="6" style="text-align:center;padding:28px;color:var(--brown-light)"><i class="ti ti-inbox" style="font-size:24px;display:block;margin-bottom:8px;opacity:.3"></i>Nenhum registro encontrado</td></tr>';
-  return rows.map(r=>
-    '<tr>'+
-    '<td style="color:var(--brown-light);font-size:11px;white-space:nowrap">'+fmtDt(r.criado_em)+'</td>'+
-    '<td><strong style="color:var(--brown)">'+r.usuario+'</strong></td>'+
-    '<td><span class="bdg '+(r.perfil==='admin'?'ba':'bav')+'">'+( r.perfil==='admin'?'Admin':'Recepção')+'</span></td>'+
-    '<td><span class="bdg '+corAcao(r.acao)+'">'+r.acao+'</span></td>'+
-    '<td><span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--brown-light)">'+
-    '<i class="ti '+iconeTabela(r.tabela)+'" style="font-size:13px"></i>'+r.tabela+'</span></td>'+
-    '<td style="color:var(--brown-light);max-width:260px;overflow:hidden;text-overflow:ellipsis">'+( r.descricao||'—')+'</td>'+
-    '</tr>'
-  ).join('');
+
+  if(!rows.length) return '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--brown-light)">'+
+    '<i class="ti ti-inbox" style="font-size:28px;opacity:.3;display:block;margin-bottom:8px"></i>Nenhum registro encontrado</td></tr>';
+
+  return rows.map(r=>{
+    const info = iconeInfo(r.tabela, r.acao);
+    const isVitoria = r.perfil==='recepcao';
+    const isPgto    = r.tabela==='pagamentos';
+    const isAgenda  = r.tabela==='google_agenda';
+    const rowStyle  = isPgto ? 'background:rgba(22,163,74,.04)' : isAgenda ? 'background:rgba(66,133,244,.04)' : '';
+
+    return '<tr style="'+rowStyle+'">'+
+    '<td style="font-size:12px;white-space:nowrap">'+fmtDt(r.criado_em)+'</td>'+
+    '<td>'+
+      '<div style="display:flex;align-items:center;gap:6px">'+
+      '<div style="width:22px;height:22px;border-radius:50%;background:'+(isVitoria?'rgba(74,107,46,.2)':'rgba(184,146,74,.2)')+
+      ';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:'+(isVitoria?'#3D5C3A':'#7A5230')+'">'+
+      r.usuario.slice(0,2).toUpperCase()+'</div>'+
+      '<span style="font-size:12px;font-weight:500;color:var(--brown)">'+r.usuario+'</span>'+
+      '</div>'+
+    '</td>'+
+    '<td>'+
+      '<div style="display:inline-flex;align-items:center;gap:5px;background:'+info.bg+';padding:3px 8px;border-radius:6px;font-size:11px;font-weight:500;color:'+info.c+'">'+
+      '<i class="ti '+info.i+'" style="font-size:12px"></i>'+info.label+'</div>'+
+    '</td>'+
+    '<td style="font-size:12px;color:var(--brown)">'+r.acao+'</td>'+
+    '<td style="font-size:12px;color:var(--brown-light);max-width:280px;overflow:hidden;text-overflow:ellipsis">'+(r.descricao||'—')+'</td>'+
+    '</tr>';
+  }).join('');
 }
 
 function filtrarLogs(){
-  const ft  = (document.getElementById('logFt')?.value||'').toLowerCase();
-  const usr = document.getElementById('logUser')?.value||'';
-  const tab = document.getElementById('logTab')?.value||'';
-  const all = window._logsCache||[];
-  const filtrado = all.filter(r=>
-    (!ft || (r.descricao||'').toLowerCase().includes(ft) || (r.acao||'').toLowerCase().includes(ft)) &&
-    (!usr || r.usuario===usr) &&
-    (!tab || r.tabela===tab)
-  );
+  const ft      = (document.getElementById('logFt')?.value||'').toLowerCase();
+  const usr     = document.getElementById('logUser')?.value||'';
+  const tab     = document.getElementById('logTab')?.value||'';
+  const periodo = document.getElementById('logPeriodo')?.value||'';
+  const all     = window._logsCache||[];
+
+  const hoje   = new Date(); hoje.setHours(0,0,0,0);
+  const semana = new Date(hoje); semana.setDate(hoje.getDate()-7);
+  const mes    = new Date(hoje); mes.setDate(1);
+
+  const filtrado = all.filter(r=>{
+    const dt = new Date(r.criado_em);
+    const okFt  = !ft  || (r.descricao||'').toLowerCase().includes(ft) || (r.acao||'').toLowerCase().includes(ft) || (r.usuario||'').toLowerCase().includes(ft);
+    const okUsr = !usr || r.usuario===usr;
+    const okTab = !tab || r.tabela===tab;
+    const okPer = !periodo ||
+      (periodo==='hoje'  && dt>=hoje) ||
+      (periodo==='semana'&& dt>=semana) ||
+      (periodo==='mes'   && dt>=mes);
+    return okFt && okUsr && okTab && okPer;
+  });
+
   const body = document.getElementById('logBody');
   const cnt  = document.getElementById('logCount');
   if(body) body.innerHTML = renderLogRows(filtrado);
