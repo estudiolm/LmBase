@@ -2548,20 +2548,53 @@ async function confirmarPagamento(){
     // 1. Salva o pagamento
     await sbInsert('pagamentos',{aluno_nome:aluno,referencia:ref,valor,forma_pgto:forma,data_pgto:dataStr});
 
-    // 2. Busca dados atuais do aluno para calcular próximo vencimento correto
+    // 2. Busca dados atuais do aluno e calcula próximo vencimento
     let novoProx = null;
     try {
       const rows = await sbGet('alunos','nome');
       const pac  = rows.find(r=>r.nome===aluno);
       if(pac){
-        // Calcula próximo vencimento: pega o dia do vencimento atual e avança 1 mês
-        let diaVenc = hoje.getDate(); // padrão: mesmo dia de hoje
-        if(pac.prox_vencto && pac.prox_vencto!=='parceria'){
-          const partes = pac.prox_vencto.split('/');
-          if(partes.length>=2) diaVenc = parseInt(partes[0])||hoje.getDate();
+        // Pega o dia ORIGINAL do vencimento (sempre preserva esse dia)
+        // Ex: vence dia 10 todo mês → pagou dia 20 atrasado → próximo = dia 10 do mês seguinte
+        let diaVenc = 10; // fallback
+        const fonteData = pac.prox_vencto || pac.ultimo_pagto;
+        if(fonteData && fonteData !== 'parceria'){
+          const partes = fonteData.split('/');
+          if(partes.length >= 2){
+            const diaParseado = parseInt(partes[0]);
+            if(diaParseado > 0 && diaParseado <= 31) diaVenc = diaParseado;
+          }
         }
-        const proxData = new Date(hoje.getFullYear(), hoje.getMonth()+1, diaVenc);
-        novoProx = pad(proxData.getDate())+'/'+pad(proxData.getMonth()+1)+'/'+String(proxData.getFullYear()).slice(2);
+
+        // Descobre qual mês é o vencimento atual
+        // Se prox_vencto existe, avança a partir dele (não da data de hoje)
+        let mesProx, anoProx;
+        if(pac.prox_vencto && pac.prox_vencto !== 'parceria'){
+          const p = pac.prox_vencto.split('/');
+          if(p.length >= 3){
+            const mesVenc = parseInt(p[1]) - 1; // 0-indexado
+            const anoVenc = parseInt('20'+p[2]);
+            // Avança 1 mês a partir do vencimento atual
+            const proxData = new Date(anoVenc, mesVenc + 1, 1);
+            mesProx = proxData.getMonth();
+            anoProx = proxData.getFullYear();
+          }
+        }
+        // Se não achou, usa mês seguinte ao atual
+        if(mesProx === undefined){
+          const proxData = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1);
+          mesProx = proxData.getMonth();
+          anoProx = proxData.getFullYear();
+        }
+
+        // Monta a data com o dia original do vencimento
+        const dataFinal = new Date(anoProx, mesProx, diaVenc);
+        // Ajuste se o dia não existe no mês (ex: dia 31 em abril)
+        if(dataFinal.getMonth() !== mesProx){
+          dataFinal.setDate(0); // último dia do mês
+        }
+
+        novoProx = pad(dataFinal.getDate())+'/'+pad(dataFinal.getMonth()+1)+'/'+String(dataFinal.getFullYear()).slice(2);
 
         await sbUpdate('alunos', pac.id, {
           ultimo_pagto: dataStr,
