@@ -1459,25 +1459,27 @@ function renderSemana(seg, dom){
   // Renderiza bloco de evento
   // Detecta conflitos e calcula colunas para cada evento do dia
   function calcularColunas(evsDia){
-    // Ordena por início
     const evs = evsDia.filter(ev=>ev.start?.dateTime).map(ev=>({
       ev,
       start: new Date(ev.start.dateTime).getTime(),
       end:   new Date(ev.end?.dateTime||ev.start.dateTime).getTime()
     })).sort((a,b)=>a.start-b.start);
 
-    const colunas = []; // cada coluna é um array de slots ocupados
-
+    const colunas = [];
     evs.forEach(item=>{
-      // Acha a primeira coluna onde não há conflito
-      let col = colunas.findIndex(c=>!c.some(o=>item.start < o.end && item.end > o.start));
+      let col = colunas.findIndex(c=>!c.some(o=>item.start<o.end&&item.end>o.start));
       if(col===-1){ colunas.push([]); col=colunas.length-1; }
       colunas[col].push(item);
       item.col = col;
     });
 
-    const total = colunas.length||1;
-    evs.forEach(item=>item.totalCols=total);
+    // totalCols por grupo de conflito
+    evs.forEach(item=>{
+      const conflitos = evs.filter(o=>o!==item && item.start<o.end && item.end>o.start);
+      const maxCol = conflitos.reduce((m,o)=>Math.max(m,o.col), item.col);
+      item.totalCols = maxCol + 1;
+    });
+
     return evs;
   }
 
@@ -1910,14 +1912,25 @@ function renderDia(dia){
       start: new Date(ev.start.dateTime).getTime(),
       end:   new Date(ev.end?.dateTime||ev.start.dateTime).getTime()
     })).sort((a,b)=>a.start-b.start);
+
+    // Atribui coluna a cada item
     const colunas=[];
     items.forEach(item=>{
       let col=colunas.findIndex(c=>!c.some(o=>item.start<o.end&&item.end>o.start));
       if(col===-1){colunas.push([]);col=colunas.length-1;}
-      colunas[col].push(item); item.col=col;
+      colunas[col].push(item);
+      item.col=col;
     });
-    const total=colunas.length||1;
-    items.forEach(item=>item.totalCols=total);
+
+    // Para cada item, calcula totalCols = quantas colunas conflitam com ele
+    items.forEach(item=>{
+      // Encontra todos os items que se sobrepõem a este
+      const conflitos = items.filter(o=>o!==item && item.start<o.end && item.end>o.start);
+      // totalCols = maior coluna entre os conflitos + 1, ou 1 se não há conflitos
+      const maxCol = conflitos.reduce((m,o)=>Math.max(m,o.col), item.col);
+      item.totalCols = maxCol + 1;
+    });
+
     return items;
   }
 
