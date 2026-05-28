@@ -2548,24 +2548,35 @@ async function confirmarPagamento(){
     // 1. Salva o pagamento
     await sbInsert('pagamentos',{aluno_nome:aluno,referencia:ref,valor,forma_pgto:forma,data_pgto:dataStr});
 
-    // 2. Busca o aluno diretamente pelo nome e calcula próximo vencimento
+    // 2. Busca o aluno no banco (ou insere se não existir) e atualiza datas
     let novoProx = null;
     try {
-      // Busca direto pelo nome exato (URL encoded)
+      // Busca direto pelo nome exato
       const r = await fetchWithTimeout(
         `${SB_URL}/rest/v1/alunos?nome=eq.${encodeURIComponent(aluno)}&limit=1`,
         { headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY} }
       );
-      const lista = await r.json();
-      const pac = lista[0];
+      let lista = await r.json();
+      let pac = lista[0];
 
-      console.log('Aluno encontrado:', pac);
+      // Se não achou no banco, insere a partir dos dados locais
+      if(!pac){
+        const local = (window._alunosDB||AL).find(a=>a.n===aluno);
+        if(local){
+          const ins = await sbInsert('alunos',{
+            status: local.s||'A', nome: local.n,
+            telefone: local.tel||null, plano: local.pl||null,
+            horario: local.h||null, valor: parseFloat(local.v)||0,
+            ultimo_pagto: local.pg||null, prox_vencto: local.px||null,
+          });
+          pac = ins[0];
+          console.log('Aluno inserido no banco:', pac?.nome);
+        }
+      }
 
       if(pac){
         let diaVenc = 10;
         const fonteData = pac.prox_vencto || pac.ultimo_pagto;
-        console.log('Fonte data:', fonteData);
-
         if(fonteData && fonteData !== 'parceria'){
           const partes = fonteData.split('/');
           if(partes.length >= 2){
@@ -2573,9 +2584,7 @@ async function confirmarPagamento(){
             if(diaParseado > 0 && diaParseado <= 31) diaVenc = diaParseado;
           }
         }
-        console.log('Dia venc:', diaVenc);
 
-        // Mês/ano base: a partir do prox_vencto atual
         let mesProx, anoProx;
         if(pac.prox_vencto && pac.prox_vencto !== 'parceria'){
           const p = pac.prox_vencto.split('/');
@@ -2591,21 +2600,13 @@ async function confirmarPagamento(){
           mesProx = (hoje.getMonth() + 1) % 12;
           anoProx = hoje.getMonth() === 11 ? hoje.getFullYear() + 1 : hoje.getFullYear();
         }
-        console.log('Mês/ano próx:', mesProx+1, anoProx);
 
         const dataFinal = new Date(anoProx, mesProx, diaVenc);
         if(dataFinal.getMonth() !== mesProx) dataFinal.setDate(0);
-
         novoProx = pad(dataFinal.getDate())+'/'+pad(dataFinal.getMonth()+1)+'/'+String(dataFinal.getFullYear()).slice(2);
-        console.log('Novo prox_vencto:', novoProx);
 
-        await sbUpdate('alunos', pac.id, {
-          ultimo_pagto: dataStr,
-          prox_vencto:  novoProx
-        });
-        console.log('Aluno atualizado no banco ✓');
-      } else {
-        console.warn('Aluno não encontrado no banco:', aluno);
+        await sbUpdate('alunos', pac.id, { ultimo_pagto: dataStr, prox_vencto: novoProx });
+        console.log('Banco atualizado ✓ próx:', novoProx);
       }
     } catch(e2){ console.warn('Update aluno banco:', e2.message); }
 
