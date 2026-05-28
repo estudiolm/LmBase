@@ -1467,15 +1467,14 @@ function renderSemana(seg, dom){
 
     const colunas = [];
     evs.forEach(item=>{
-      let col = colunas.findIndex(c=>!c.some(o=>item.start<o.end&&item.end>o.start));
+      let col = colunas.findIndex(c=>!c.some(o=>item.start < o.end-60000 && item.end-60000 > o.start));
       if(col===-1){ colunas.push([]); col=colunas.length-1; }
       colunas[col].push(item);
       item.col = col;
     });
 
-    // totalCols por grupo de conflito
     evs.forEach(item=>{
-      const conflitos = evs.filter(o=>o!==item && item.start<o.end && item.end>o.start);
+      const conflitos = evs.filter(o=>o!==item && item.start < o.end-60000 && item.end-60000 > o.start);
       const maxCol = conflitos.reduce((m,o)=>Math.max(m,o.col), item.col);
       item.totalCols = maxCol + 1;
     });
@@ -1913,20 +1912,18 @@ function renderDia(dia){
       end:   new Date(ev.end?.dateTime||ev.start.dateTime).getTime()
     })).sort((a,b)=>a.start-b.start);
 
-    // Atribui coluna a cada item
+    // Atribui coluna — eventos sequenciais (end == start do outro) NÃO conflitam
     const colunas=[];
     items.forEach(item=>{
-      let col=colunas.findIndex(c=>!c.some(o=>item.start<o.end&&item.end>o.start));
+      let col=colunas.findIndex(c=>!c.some(o=>item.start < o.end-60000 && item.end-60000 > o.start));
       if(col===-1){colunas.push([]);col=colunas.length-1;}
       colunas[col].push(item);
       item.col=col;
     });
 
-    // Para cada item, calcula totalCols = quantas colunas conflitam com ele
+    // totalCols por grupo de conflito real
     items.forEach(item=>{
-      // Encontra todos os items que se sobrepõem a este
-      const conflitos = items.filter(o=>o!==item && item.start<o.end && item.end>o.start);
-      // totalCols = maior coluna entre os conflitos + 1, ou 1 se não há conflitos
+      const conflitos = items.filter(o=>o!==item && item.start < o.end-60000 && item.end-60000 > o.start);
       const maxCol = conflitos.reduce((m,o)=>Math.max(m,o.col), item.col);
       item.totalCols = maxCol + 1;
     });
