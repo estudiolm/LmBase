@@ -1813,8 +1813,8 @@ const ENCOMENDAS=[
 const DIAS=['Seg','Ter','Qua','Qui','Sex','Sáb'];
 const HORAS=['07H','08H','09H','10H','15H','16H','17H','18H','19H'];
 const CAP=4;
-const SL_STATUS={'A':'Ativo','P':'Prospect','E':'Experimental','AV':'Avulso'};
-const SL_BADGE={'A':'bg','P':'bp','E':'bb','AV':'bav'};
+const SL_STATUS={'A':'Ativo','P':'Prospect','E':'Experimental','AV':'Avulso','PA':'Pausado'};
+const SL_BADGE={'A':'bg','P':'bp','E':'bb','AV':'bav','PA':'ba'};
 
 function buildGrade(){
   const g={};
@@ -2103,7 +2103,7 @@ async function navPAlunos(){
 
 function renderPAlunos(){
   const dados = window._alunosDB || AL;
-  const tabs=[{s:'A',l:'Ativos'},{s:'P',l:'Prospects'},{s:'E',l:'Experimentais'},{s:'AV',l:'Avulsos'}];
+  const tabs=[{s:'A',l:'Ativos'},{s:'P',l:'Prospects'},{s:'E',l:'Experimentais'},{s:'AV',l:'Avulsos'},{s:'PA',l:'Pausados'}];
   const cnt={};tabs.forEach(t=>cnt[t.s]=dados.filter(a=>a.s===t.s).length);
   const lista=dados.filter(a=>a.s===alTab&&(!ft||a.n.toLowerCase().includes(ft.toLowerCase())||(a.h||'').toLowerCase().includes(ft.toLowerCase())));
   window._listaAtual = lista; // salva para acessar por índice
@@ -2125,23 +2125,178 @@ function verAlunoIdx(i){
 }
 
 function verAlunoDetalhe(a){
+  const isPausado = a.s==='PA';
   set('<div class="tb"><button class="btn" onclick="navPAlunos()"><i class="ti ti-arrow-left"></i> Voltar</button></div>'+
   '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'+
   '<div class="av '+avcls(a.id||0)+'" style="width:40px;height:40px;font-size:14px">'+ini(a.n)+'</div>'+
-  '<div><div style="font-size:15px;font-weight:500;color:#4A2E1A">'+a.n+'</div>'+
-  '<div style="font-size:12px;color:#7A5230">'+(a.tel||'Telefone não informado')+'</div></div>'+
+  '<div><div style="font-size:15px;font-weight:500;color:var(--brown)">'+a.n+'</div>'+
+  '<div style="font-size:12px;color:var(--brown-light)">'+(a.tel||'Telefone não informado')+'</div></div>'+
   '<span style="margin-left:auto">'+sbadge(a.s)+'</span></div>'+
+
+  (isPausado?'<div style="background:rgba(184,146,74,.1);border:1px solid rgba(184,146,74,.3);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--brown-light)">'+
+  '<i class="ti ti-pause-circle" style="margin-right:6px;color:var(--gold-dark)"></i>Aluno pausado — não aparece nos financeiros nem na grade.</div>':'')+
+
   '<div class="dp"><h3>Dados</h3>'+
   dr('Plano',a.pl||'—')+dr('Horário(s)',a.h||'—')+dr('Valor','R$ '+(a.v||0))+
   dr('Último pagto',a.pg||'—')+dr('Próx. vencimento',a.px||'—')+'</div>'+
+
   '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
   (a.s==='A'?'<button class="btn btnb" onclick="abrirPagPilates(\''+esc(a.n)+'\','+(a.v||0)+')"><i class="ti ti-cash"></i> Registrar pagamento</button>':'')+
   (a.s==='A'?'<button class="btn" onclick="abrirTroca(\''+esc(a.n)+'\',\''+esc(a.h||'')+'\')"><i class="ti ti-arrows-exchange"></i> Troca de aula</button>':'')+
-  (a.s==='E'?'<button class="btn btnb" onclick="converterAtivoObj(this)"><i class="ti ti-user-check"></i> Converter para ativo</button>':'')+
+  (a.s==='E'?'<button class="btn btnb" onclick="converterAtivoObj()"><i class="ti ti-user-check"></i> Converter para ativo</button>':'')+
   (a.s==='P'?'<button class="btn btnb" onclick="alert(\'Agendar experimental!\')"><i class="ti ti-calendar-plus"></i> Agendar experimental</button>':'')+
+  (a.s==='A'?'<button class="btn" style="color:var(--gold-dark);border-color:rgba(184,146,74,.4)" onclick="pausarAluno()"><i class="ti ti-pause-circle"></i> Pausar aluno</button>':'')+
+  (isPausado?'<button class="btn btnb" onclick="reativarAluno()"><i class="ti ti-player-play"></i> Reativar aluno</button>':'')+
   '</div>');
-  // guarda referência do aluno atual
   window._alunoAtual = a;
+}
+
+async function pausarAluno(){
+  const a = window._alunoAtual;
+  if(!a) return;
+
+  // Se Google conectado, busca eventos futuros com o nome do aluno
+  let eventosFuturos = [];
+  const primeiroNome = a.n.split(' ')[0].toLowerCase();
+
+  if(gcalToken){
+    try {
+      const hoje = new Date(); hoje.setHours(0,0,0,0);
+      const fim  = new Date(hoje); fim.setMonth(fim.getMonth()+3);
+      // Busca em todos os calendários visíveis
+      const promises = gcalCals.filter(c=>c.selected!==false).map(c=>
+        gcalListEvents(c.id, hoje.toISOString(), fim.toISOString())
+          .then(evs=>evs.map(e=>({...e,_calId:c.id,_calNome:c.summary})))
+          .catch(()=>[])
+      );
+      const todos = (await Promise.all(promises)).flat();
+      // Filtra eventos que contêm o primeiro nome do aluno (case insensitive)
+      eventosFuturos = todos.filter(e=>(e.summary||'').toLowerCase().includes(primeiroNome));
+    } catch(err){ console.warn('Busca agenda:', err.message); }
+  }
+
+  // Monta o modal com aviso + eventos encontrados
+  const temEventos = eventosFuturos.length > 0;
+
+  function fmtEvento(ev){
+    const s = ev.start?.dateTime||ev.start?.date||'';
+    const d = s ? new Date(s) : null;
+    const dataStr = d ? d.toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short'})+
+      (ev.start?.dateTime?' · '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'') : '—';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:500;color:var(--brown)">${ev.summary}</div>
+        <div style="font-size:11px;color:var(--brown-light)">${dataStr} · ${ev._calNome}</div>
+      </div>
+      <a href="https://calendar.google.com/calendar/r/eventedit/${ev.id}" target="_blank"
+        style="font-size:11px;color:#4285F4;text-decoration:none;white-space:nowrap">
+        <i class="ti ti-external-link"></i> Editar
+      </a>
+    </div>`;
+  }
+
+  abrirModal(
+    '<div class="mdt"><i class="ti ti-pause-circle" style="color:var(--gold-dark);margin-right:8px"></i>Pausar aluno — '+a.n.split(' ')[0]+'</div>'+
+
+    '<div style="background:rgba(184,146,74,.08);border:1px solid rgba(184,146,74,.25);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--brown)">'+
+    '<strong>'+a.n+'</strong> será marcado como pausado e sairá dos financeiros e métricas do sistema.</div>'+
+
+    '<label class="fl">Motivo da pausa (opcional)</label>'+
+    '<input class="fi" id="pause_motivo" placeholder="Ex: Viagem, problema de saúde, férias…">'+
+
+    (temEventos?
+      '<div style="margin-bottom:8px">'+
+      '<div style="font-size:11px;font-weight:600;color:#4285F4;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
+      '<i class="ti ti-calendar-event"></i> '+eventosFuturos.length+' evento(s) futuros encontrados na agenda</div>'+
+      '<div style="font-size:12px;color:var(--brown-light);margin-bottom:10px">Clique em "Editar" para abrir o evento no Google e remover o nome manualmente:</div>'+
+      '<div style="max-height:220px;overflow-y:auto;padding-right:4px">'+
+      eventosFuturos.map(fmtEvento).join('')+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--brown-light);margin-top:10px;padding:8px;background:rgba(66,133,244,.06);border-radius:8px">'+
+      '<i class="ti ti-info-circle"></i> Os eventos não são alterados automaticamente. Edite cada um no Google Agenda para remover o nome da pessoa.'+
+      '</div></div>'
+    :
+      gcalToken?
+      '<div style="font-size:12px;color:var(--brown-light);margin-bottom:12px"><i class="ti ti-calendar-check"></i> Nenhum evento futuro encontrado com o nome desta pessoa na agenda.</div>'
+      :
+      '<div style="font-size:12px;color:var(--brown-light);margin-bottom:12px"><i class="ti ti-calendar-off"></i> Conecte o Google Agenda para ver os eventos futuros desta pessoa.</div>'
+    )+
+
+    '<div class="mdf">'+
+    '<button class="btn" onclick="fecharModal()">Cancelar</button>'+
+    '<button class="btn" style="color:var(--gold-dark);border-color:rgba(184,146,74,.4)" id="pause_btn" onclick="confirmarPausa()">'+
+    '<i class="ti ti-pause-circle"></i> Confirmar pausa</button>'+
+    '</div>'
+  );
+
+  // Guarda eventos para referência
+  window._eventosPausa = eventosFuturos;
+}
+
+async function confirmarPausa(){
+  const a = window._alunoAtual;
+  if(!a) return;
+  const motivo = document.getElementById('pause_motivo')?.value||'';
+  const btn = document.getElementById('pause_btn');
+  btn.disabled=true; btn.textContent='Pausando…';
+  try {
+    await garantirAlunoBanco(a);
+    const r = await fetchWithTimeout(
+      `${SB_URL}/rest/v1/alunos?nome=eq.${encodeURIComponent(a.n)}&limit=1`,
+      { headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY} }
+    );
+    const lista = await r.json();
+    const pac = lista[0];
+    if(pac) await sbUpdate('alunos', pac.id, {status:'PA'});
+    a.s = 'PA';
+    atualizarCacheAluno(a.n, {s:'PA'});
+    await registrarLog('pausou aluno','alunos', a.n+(motivo?' — '+motivo:''));
+    fecharModal();
+    verAlunoDetalhe(a);
+  } catch(e){ btn.disabled=false; btn.textContent='Confirmar pausa'; alert('Erro: '+e.message); }
+}
+
+async function reativarAluno(){
+  const a = window._alunoAtual;
+  if(!a) return;
+  if(!confirm('Reativar '+a.n+'?')) return;
+  try {
+    const r = await fetchWithTimeout(
+      `${SB_URL}/rest/v1/alunos?nome=eq.${encodeURIComponent(a.n)}&limit=1`,
+      { headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY} }
+    );
+    const lista = await r.json();
+    const pac = lista[0];
+    if(pac) await sbUpdate('alunos', pac.id, {status:'A'});
+    a.s = 'A';
+    atualizarCacheAluno(a.n, {s:'A'});
+    await registrarLog('reativou aluno','alunos', a.n);
+    verAlunoDetalhe(a);
+  } catch(e){ alert('Erro: '+e.message); }
+}
+
+// Atualiza aluno no cache local por nome
+function atualizarCacheAluno(nome, dados){
+  [AL, window._alunosDB||[]].forEach(lista=>{
+    const a = lista.find(x=>x.n===nome);
+    if(a) Object.assign(a, dados);
+  });
+}
+
+// Garante que o aluno existe no banco (insere se necessário)
+async function garantirAlunoBanco(a){
+  const r = await fetchWithTimeout(
+    `${SB_URL}/rest/v1/alunos?nome=eq.${encodeURIComponent(a.n)}&limit=1`,
+    { headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY} }
+  );
+  const lista = await r.json();
+  if(!lista[0]){
+    await sbInsert('alunos',{
+      status:a.s||'A', nome:a.n, telefone:a.tel||null,
+      plano:a.pl||null, horario:a.h||null, valor:parseFloat(a.v)||0,
+      ultimo_pagto:a.pg||null, prox_vencto:a.px||null,
+    });
+  }
 }
 
 async function converterAtivoObj(){
@@ -2165,7 +2320,7 @@ async function navPFin(){
   try {
     const [alRows, pgRows] = await Promise.all([sbGet('alunos','nome'), sbGet('pagamentos','criado_em')]);
     const dbNomesF = new Set(alRows.map(r=>r.nome.trim().toLowerCase()));
-    const dbMapped = alRows.filter(r=>r.status==='A').map(r=>({id:r.id,s:r.status,n:r.nome,pl:r.plano,h:r.horario||'—',v:parseFloat(r.valor)||0,pg:r.ultimo_pagto,px:r.prox_vencto}));
+    const dbMapped = alRows.filter(r=>r.status==='A'&&r.status!=='PA').map(r=>({id:r.id,s:r.status,n:r.nome,pl:r.plano,h:r.horario||'—',v:parseFloat(r.valor)||0,pg:r.ultimo_pagto,px:r.prox_vencto}));
     const at = alRows.length > 0 ? [...dbMapped, ...AL.filter(a=>a.s==='A'&&!dbNomesF.has(a.n.trim().toLowerCase()))] : AL.filter(a=>a.s==='A');
     renderPFin(at, pgRows);
   } catch(e){ console.warn('Supabase fin:', e.message); }
