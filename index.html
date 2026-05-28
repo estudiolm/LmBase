@@ -1407,8 +1407,8 @@ function abrirEditarEvento(idx){
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
+  const isRecorrente = !!(ev.recurrence || ev.recurringEventId);
   const cor = ev._calColor||'#4285F4';
-  const isFisio = (ev.summary||'').toLowerCase().startsWith('fisio');
 
   abrirModal(
     `<div class="mdt"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${cor};margin-right:8px;vertical-align:middle"></span>Editar evento</div>`+
@@ -1417,7 +1417,23 @@ function abrirEditarEvento(idx){
     '<div><label class="fl">Fim</label><input class="fi" id="ev_fim" type="datetime-local" value="'+toLocal(eRaw)+'"></div></div>'+
     '<label class="fl">Local</label><input class="fi" id="ev_local" value="'+(ev.location||'')+'">'+
     '<label class="fl">Descrição</label><textarea class="fi" id="ev_desc" rows="2" style="resize:vertical">'+(ev.description||'')+'</textarea>'+
-    (ev.recurrence?'<div style="background:rgba(201,169,110,.1);border:1px solid rgba(201,169,110,.2);border-radius:8px;padding:10px;font-size:12px;color:var(--brown-light);margin-bottom:8px"><i class="ti ti-repeat" style="margin-right:5px"></i>Este é um evento recorrente. A edição altera apenas esta ocorrência.</div>':'')+
+
+    // Seletor de escopo para eventos recorrentes
+    (isRecorrente?
+      '<label class="fl" style="margin-top:4px">Aplicar alteração em</label>'+
+      '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">'+
+      '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--brown)">'+
+        '<input type="radio" name="ev_escopo" value="this" checked style="accent-color:var(--gold)">'+
+        '<span><strong>Somente este evento</strong> <span style="color:var(--brown-light);font-size:11px">— altera apenas esta data</span></span></label>'+
+      '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--brown)">'+
+        '<input type="radio" name="ev_escopo" value="following" style="accent-color:var(--gold)">'+
+        '<span><strong>Este e os seguintes</strong> <span style="color:var(--brown-light);font-size:11px">— a partir desta data em diante</span></span></label>'+
+      '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--brown)">'+
+        '<input type="radio" name="ev_escopo" value="all" style="accent-color:var(--gold)">'+
+        '<span><strong>Todos os eventos</strong> <span style="color:var(--brown-light);font-size:11px">— toda a série recorrente</span></span></label>'+
+      '</div>'
+    :'')+
+
     '<div class="mdf">'+
     '<button class="btn" style="color:#8B2E1A;border-color:rgba(139,46,26,.3)" onclick="excluirEvento()"><i class="ti ti-trash"></i> Excluir</button>'+
     '<button class="btn" onclick="fecharModal()">Cancelar</button>'+
@@ -1435,6 +1451,11 @@ async function atualizarEvento(){
   const titulo = document.getElementById('ev_titulo').value.trim();
   const inicio = document.getElementById('ev_inicio').value;
   const fim    = document.getElementById('ev_fim').value;
+  const escopo = document.querySelector('input[name="ev_escopo"]:checked')?.value || 'this';
+
+  const isRecorrente = !!(ev.recurrence || ev.recurringEventId);
+  const calId = ev._calId||'primary';
+  const baseId = ev.recurringEventId || ev.id; // ID da série mãe
 
   const body = {
     summary:     titulo,
@@ -1445,15 +1466,57 @@ async function atualizarEvento(){
   };
 
   try {
-    const calId = ev._calId||'primary';
-    // Se recorrente, edita só esta ocorrência
-    const evId = ev.recurringEventId ? ev.id : ev.id;
-    await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${evId}`,{
-      method:'PATCH',
-      headers:{ Authorization:'Bearer '+gcalToken, 'Content-Type':'application/json' },
-      body: JSON.stringify(body)
-    });
-    await registrarLog('editou evento', 'google_agenda', titulo+' em '+new Date(inicio).toLocaleDateString('pt-BR'));
+    if(!isRecorrente || escopo==='this'){
+      // Edita só esta ocorrência
+      await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${ev.id}`,{
+        method:'PATCH',
+        headers:{ Authorization:'Bearer '+gcalToken, 'Content-Type':'application/json' },
+        body: JSON.stringify(body)
+      });
+
+    } else if(escopo==='following'){
+      // "Este e os seguintes": trunca a série no dia anterior e cria nova série a partir daqui
+      // 1. Busca o evento mãe
+      const maeR = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${baseId}`,{
+        headers:{ Authorization:'Bearer '+gcalToken }
+      });
+      const mae = await maeR.json();
+
+      // 2. Trunca a série mãe: define UNTIL = 1 dia antes desta ocorrência
+      const diaAntes = new Date(ev.start?.dateTime||ev.start?.date);
+      diaAntes.setDate(diaAntes.getDate()-1);
+      const until = diaAntes.toISOString().replace(/[-:]/g,'').split('.')[0]+'Z';
+      const recOld = (mae.recurrence||[]).map(r=>
+        r.startsWith('RRULE:') ? r.replace(/UNTIL=[^;]*(;|$)/,'').replace(/COUNT=[^;]*(;|$)/,'')+'UNTIL='+until : r
+      );
+      await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${baseId}`,{
+        method:'PATCH',
+        headers:{ Authorization:'Bearer '+gcalToken, 'Content-Type':'application/json' },
+        body: JSON.stringify({recurrence: recOld})
+      });
+
+      // 3. Cria nova série com os dados editados a partir desta data
+      const novoEvento = {
+        ...body,
+        recurrence: mae.recurrence||['RRULE:FREQ=WEEKLY']
+      };
+      await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events`,{
+        method:'POST',
+        headers:{ Authorization:'Bearer '+gcalToken, 'Content-Type':'application/json' },
+        body: JSON.stringify(novoEvento)
+      });
+
+    } else if(escopo==='all'){
+      // Edita a série inteira (evento mãe)
+      await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${baseId}`,{
+        method:'PATCH',
+        headers:{ Authorization:'Bearer '+gcalToken, 'Content-Type':'application/json' },
+        body: JSON.stringify(body)
+      });
+    }
+
+    const escopoLabel = escopo==='this'?'esta ocorrência':escopo==='following'?'este e seguintes':'toda a série';
+    await registrarLog('editou evento', 'google_agenda', titulo+' ('+escopoLabel+') em '+new Date(inicio).toLocaleDateString('pt-BR'));
     fecharModal();
     carregarSemana(gcalViewDate);
   } catch(e){
@@ -1465,14 +1528,71 @@ async function atualizarEvento(){
 async function excluirEvento(){
   const ev = window._evEditando;
   if(!ev) return;
-  if(!confirm('Excluir "'+ev.summary+'"?')) return;
-  try {
-    const calId = ev._calId||'primary';
-    await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${ev.id}`,{
-      method:'DELETE',
-      headers:{ Authorization:'Bearer '+gcalToken }
+  const isRecorrente = !!(ev.recurrence || ev.recurringEventId);
+  const calId = ev._calId||'primary';
+  const baseId = ev.recurringEventId || ev.id;
+
+  // Para recorrentes, pergunta o escopo
+  let escopo = 'this';
+  if(isRecorrente){
+    const opcao = await new Promise(resolve=>{
+      abrirModal(
+        '<div class="mdt" style="color:#8B2E1A"><i class="ti ti-trash" style="margin-right:8px"></i>Excluir evento recorrente</div>'+
+        '<div style="font-size:13px;color:var(--brown);margin-bottom:16px">Como deseja excluir <strong>"'+ev.summary+'"</strong>?</div>'+
+        '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">'+
+        '<button class="btn" style="text-align:left;padding:10px 14px" onclick="window._excluirEscopo=\'this\';fecharModal()">'+
+          '<strong>Somente este evento</strong><div style="font-size:11px;color:var(--brown-light)">Remove apenas esta data</div></button>'+
+        '<button class="btn" style="text-align:left;padding:10px 14px" onclick="window._excluirEscopo=\'following\';fecharModal()">'+
+          '<strong>Este e os seguintes</strong><div style="font-size:11px;color:var(--brown-light)">Remove desta data em diante</div></button>'+
+        '<button class="btn" style="text-align:left;padding:10px 14px" onclick="window._excluirEscopo=\'all\';fecharModal()">'+
+          '<strong>Todos os eventos</strong><div style="font-size:11px;color:var(--brown-light)">Remove toda a série</div></button>'+
+        '</div>'+
+        '<div class="mdf"><button class="btn" onclick="window._excluirEscopo=\'cancel\';fecharModal()">Cancelar</button></div>'
+      );
+      // Aguarda fechamento do modal
+      const check = setInterval(()=>{
+        if(document.getElementById('ovlbg').style.display==='none'){
+          clearInterval(check);
+          resolve(window._excluirEscopo||'cancel');
+        }
+      }, 100);
     });
-    await registrarLog('excluiu evento', 'google_agenda', ev.summary);
+    if(opcao==='cancel') return;
+    escopo = opcao;
+  } else {
+    if(!confirm('Excluir "'+ev.summary+'"?')) return;
+  }
+
+  try {
+    if(escopo==='this'){
+      await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${ev.id}`,{
+        method:'DELETE', headers:{ Authorization:'Bearer '+gcalToken }
+      });
+    } else if(escopo==='following'){
+      // Trunca a série no dia anterior
+      const maeR = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${baseId}`,{
+        headers:{ Authorization:'Bearer '+gcalToken }
+      });
+      const mae = await maeR.json();
+      const diaAntes = new Date(ev.start?.dateTime||ev.start?.date);
+      diaAntes.setDate(diaAntes.getDate()-1);
+      const until = diaAntes.toISOString().replace(/[-:]/g,'').split('.')[0]+'Z';
+      const recOld = (mae.recurrence||[]).map(r=>
+        r.startsWith('RRULE:') ? r.replace(/UNTIL=[^;]*(;|$)/,'').replace(/COUNT=[^;]*(;|$)/,'')+'UNTIL='+until : r
+      );
+      await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${baseId}`,{
+        method:'PATCH',
+        headers:{ Authorization:'Bearer '+gcalToken, 'Content-Type':'application/json' },
+        body: JSON.stringify({recurrence: recOld})
+      });
+    } else if(escopo==='all'){
+      await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events/${baseId}`,{
+        method:'DELETE', headers:{ Authorization:'Bearer '+gcalToken }
+      });
+    }
+
+    const escopoLabel = escopo==='this'?'esta ocorrência':escopo==='following'?'este e seguintes':'toda a série';
+    await registrarLog('excluiu evento', 'google_agenda', ev.summary+' ('+escopoLabel+')');
     fecharModal();
     carregarSemana(gcalViewDate);
   } catch(e){ alert('Erro ao excluir: '+e.message); }
