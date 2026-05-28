@@ -2548,16 +2548,24 @@ async function confirmarPagamento(){
     // 1. Salva o pagamento
     await sbInsert('pagamentos',{aluno_nome:aluno,referencia:ref,valor,forma_pgto:forma,data_pgto:dataStr});
 
-    // 2. Busca dados atuais do aluno e calcula próximo vencimento
+    // 2. Busca o aluno diretamente pelo nome e calcula próximo vencimento
     let novoProx = null;
     try {
-      const rows = await sbGet('alunos','nome');
-      const pac  = rows.find(r=>r.nome===aluno);
+      // Busca direto pelo nome exato (URL encoded)
+      const r = await fetchWithTimeout(
+        `${SB_URL}/rest/v1/alunos?nome=eq.${encodeURIComponent(aluno)}&limit=1`,
+        { headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY} }
+      );
+      const lista = await r.json();
+      const pac = lista[0];
+
+      console.log('Aluno encontrado:', pac);
+
       if(pac){
-        // Pega o dia ORIGINAL do vencimento (sempre preserva esse dia)
-        // Ex: vence dia 10 todo mês → pagou dia 20 atrasado → próximo = dia 10 do mês seguinte
-        let diaVenc = 10; // fallback
+        let diaVenc = 10;
         const fonteData = pac.prox_vencto || pac.ultimo_pagto;
+        console.log('Fonte data:', fonteData);
+
         if(fonteData && fonteData !== 'parceria'){
           const partes = fonteData.split('/');
           if(partes.length >= 2){
@@ -2565,41 +2573,39 @@ async function confirmarPagamento(){
             if(diaParseado > 0 && diaParseado <= 31) diaVenc = diaParseado;
           }
         }
+        console.log('Dia venc:', diaVenc);
 
-        // Descobre qual mês é o vencimento atual
-        // Se prox_vencto existe, avança a partir dele (não da data de hoje)
+        // Mês/ano base: a partir do prox_vencto atual
         let mesProx, anoProx;
         if(pac.prox_vencto && pac.prox_vencto !== 'parceria'){
           const p = pac.prox_vencto.split('/');
           if(p.length >= 3){
-            const mesVenc = parseInt(p[1]) - 1; // 0-indexado
-            const anoVenc = parseInt('20'+p[2]);
-            // Avança 1 mês a partir do vencimento atual
+            const mesVenc = parseInt(p[1]) - 1;
+            const anoVenc = parseInt('20' + p[2]);
             const proxData = new Date(anoVenc, mesVenc + 1, 1);
             mesProx = proxData.getMonth();
             anoProx = proxData.getFullYear();
           }
         }
-        // Se não achou, usa mês seguinte ao atual
         if(mesProx === undefined){
-          const proxData = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 1);
-          mesProx = proxData.getMonth();
-          anoProx = proxData.getFullYear();
+          mesProx = (hoje.getMonth() + 1) % 12;
+          anoProx = hoje.getMonth() === 11 ? hoje.getFullYear() + 1 : hoje.getFullYear();
         }
+        console.log('Mês/ano próx:', mesProx+1, anoProx);
 
-        // Monta a data com o dia original do vencimento
         const dataFinal = new Date(anoProx, mesProx, diaVenc);
-        // Ajuste se o dia não existe no mês (ex: dia 31 em abril)
-        if(dataFinal.getMonth() !== mesProx){
-          dataFinal.setDate(0); // último dia do mês
-        }
+        if(dataFinal.getMonth() !== mesProx) dataFinal.setDate(0);
 
         novoProx = pad(dataFinal.getDate())+'/'+pad(dataFinal.getMonth()+1)+'/'+String(dataFinal.getFullYear()).slice(2);
+        console.log('Novo prox_vencto:', novoProx);
 
         await sbUpdate('alunos', pac.id, {
           ultimo_pagto: dataStr,
           prox_vencto:  novoProx
         });
+        console.log('Aluno atualizado no banco ✓');
+      } else {
+        console.warn('Aluno não encontrado no banco:', aluno);
       }
     } catch(e2){ console.warn('Update aluno banco:', e2.message); }
 
