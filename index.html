@@ -1982,9 +1982,9 @@ function renderDia(dia){
     '<div style="border-right:1px solid var(--border)">'+
     HORAS_GRID.map(h=>`<div style="height:${PX_HORA}px;border-bottom:1px solid rgba(201,169,110,.08);display:flex;align-items:flex-start;justify-content:flex-end;padding:3px 8px 0 0"><span style="font-size:11px;color:var(--brown-light)">${String(h).padStart(2,'0')}:00</span></div>`).join('')+
     '</div>'+
-    // Coluna do dia
-    `<div style="position:relative;${isHoje?'background:rgba(201,169,110,.02)':''}">
-      ${HORAS_GRID.map(h=>`<div style="height:${PX_HORA}px;border-bottom:1px solid rgba(201,169,110,.08)" onclick="abrirNovoEventoHora(${dia.getFullYear()},${dia.getMonth()},${dia.getDate()},${h})"></div>`).join('')}
+    // Coluna do dia — altura explícita = horas * PX_HORA
+    `<div style="position:relative;height:${HORAS_GRID.length*PX_HORA}px;${isHoje?'background:rgba(201,169,110,.02)':''}">
+      ${HORAS_GRID.map((h,i)=>`<div style="position:absolute;top:${i*PX_HORA}px;left:0;right:0;height:${PX_HORA}px;border-bottom:1px solid rgba(201,169,110,.08);box-sizing:border-box" onclick="abrirNovoEventoHora(${dia.getFullYear()},${dia.getMonth()},${dia.getDate()},${h})"></div>`).join('')}
       ${evsComColunas.map(item=>{
         const ev=item.ev;
         const sRaw=ev.start?.dateTime;
