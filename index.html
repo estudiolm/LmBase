@@ -782,7 +782,7 @@ select.fi { cursor: pointer; }
 
   <div class="nsep">google agenda</div>
   <div id="gcalStatus" class="gcal-connect" onclick="conectarGoogle()">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+    <span id="gcalSyncDot" style="width:8px;height:8px;border-radius:50%;background:rgba(61,92,58,.4);flex-shrink:0;display:inline-block"></span>
     <span id="gcalStatusText">Conectar Google Agenda</span>
   </div>
   <button class="ni" id="btnAgenda" style="display:none;border-left-color:#4285F4" onclick="nav('gcal')"><i class="ti ti-calendar-event"></i>Minha Agenda</button>
@@ -1000,10 +1000,84 @@ function conectarGoogle(){
       }
       if(btnAg) btnAg.style.display = '';
       await registrarLog('conectou Google Agenda', 'sistema', 'Integração Google Calendar ativada');
+
+      // Inicia sincronização automática
+      iniciarSyncAutomatico();
       nav('gcal');
     }
   });
   gcalClient.requestAccessToken();
+}
+
+// ── SINCRONIZAÇÃO AUTOMÁTICA ──────────────────────────────
+const SYNC_INTERVALO = 5 * 60 * 1000; // 5 minutos
+let _syncTimer = null;
+let _ultimoSync = null;
+
+function iniciarSyncAutomatico(){
+  if(_syncTimer) clearInterval(_syncTimer);
+  _syncTimer = setInterval(syncAgendaBackground, SYNC_INTERVALO);
+  // Também renova o token antes de expirar (tokens OAuth duram 1h)
+  setTimeout(renovarToken, 55 * 60 * 1000);
+  console.log('Sync automático iniciado — a cada 5 minutos');
+  atualizarIndicadorSync('ok');
+}
+
+function pararSyncAutomatico(){
+  if(_syncTimer){ clearInterval(_syncTimer); _syncTimer = null; }
+}
+
+async function syncAgendaBackground(){
+  if(!gcalToken) return;
+  try {
+    // Atualiza silenciosamente — só recarrega se estiver na tela da agenda
+    if(pg === 'gcal'){
+      await carregarSemana(gcalViewDate);
+    }
+    // Atualiza grade de aulas se estiver nela
+    if(pg === 'p_agenda'){
+      await rPAgenda();
+    }
+    _ultimoSync = new Date();
+    atualizarIndicadorSync('ok');
+    console.log('Sync automático concluído:', _ultimoSync.toLocaleTimeString('pt-BR'));
+  } catch(e){
+    console.warn('Sync falhou:', e.message);
+    atualizarIndicadorSync('erro');
+    // Se token expirou, para o sync e pede reconexão
+    if(e.message.includes('expirado') || e.message.includes('401')){
+      pararSyncAutomatico();
+      gcalToken = null;
+      atualizarIndicadorSync('desconectado');
+    }
+  }
+}
+
+function renovarToken(){
+  if(!gcalClient || !gcalToken) return;
+  try {
+    gcalClient.requestAccessToken({prompt:''});
+    console.log('Token renovado');
+  } catch(e){ console.warn('Renovação falhou:', e.message); }
+}
+
+function atualizarIndicadorSync(estado){
+  const el = document.getElementById('gcalStatusText');
+  const dot = document.getElementById('gcalSyncDot');
+  if(!el) return;
+  const agora = _ultimoSync ? _ultimoSync.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+  if(estado==='ok'){
+    el.innerHTML = 'Agenda conectada ✓'+(agora?' <span style="font-size:9px;opacity:.7">'+agora+'</span>':'');
+    if(dot) dot.style.background = '#3D5C3A';
+  } else if(estado==='sincronizando'){
+    el.innerHTML = 'Sincronizando… <span style="font-size:9px;opacity:.7">⏳</span>';
+  } else if(estado==='erro'){
+    el.innerHTML = 'Falha no sync <span style="font-size:9px;opacity:.7">⚠</span>';
+    if(dot) dot.style.background = '#B8924A';
+  } else if(estado==='desconectado'){
+    el.innerHTML = 'Reconectar agenda';
+    if(dot) dot.style.background = '#8B2E1A';
+  }
 }
 
 async function gcalRequest(url){
@@ -1228,7 +1302,7 @@ function renderSemana(seg, dom){
     '<span style="font-size:14px;font-weight:600;color:var(--brown)">'+mesLabel+'</span>'+
     '<div style="margin-left:auto;display:flex;gap:8px">'+
     '<select class="sel" style="font-size:12px" onchange="gcalSelectedCal=this.value;carregarSemana(gcalViewDate)">'+calOpts+'</select>'+
-    '<button class="btn btns" onclick="carregarSemana(gcalViewDate)"><i class="ti ti-refresh"></i></button>'+
+    '<button class="btn btns" onclick="syncAgendaBackground();carregarSemana(gcalViewDate)"><i class="ti ti-refresh"></i> Atualizar</button>'+
     '<button class="btn btnb" onclick="abrirNovoEvento()"><i class="ti ti-plus"></i> Novo evento</button>'+
     '</div></div>'+
 
