@@ -1967,9 +1967,9 @@ async function navPDash(){
   renderPDash(AL, 'carregando');
   try {
     const rows = await sbGet('alunos','id');
-    const dbIds = new Set(rows.map(r=>r.id));
+    const dbNomesD = new Set(rows.map(r=>r.nome.trim().toLowerCase()));
     const dbMapped = rows.map(r=>({id:r.id,s:r.status,n:r.nome,tel:r.telefone,pl:r.plano,h:r.horario||'—',v:parseFloat(r.valor)||0,pg:r.ultimo_pagto,px:r.prox_vencto}));
-    const merged = rows.length > 0 ? [...dbMapped, ...AL.filter(a=>!dbIds.has(a.id))] : AL;
+    const merged = rows.length > 0 ? [...dbMapped, ...AL.filter(a=>!dbNomesD.has(a.n.trim().toLowerCase()))] : AL;
     renderPDash(merged, false);
   } catch(e){
     console.warn('Supabase:', e.message);
@@ -2009,14 +2009,15 @@ async function navPAlunos(){
     window._alunosDB = AL;
     renderPAlunos();
     const rows = await sbGet('alunos','nome');
-    const dbIds = new Set(rows.map(r=>r.id));
+    const dbNomes = new Set(rows.map(r=>r.nome.trim().toLowerCase()));
     const dbMapped = rows.map(r=>({
       id:r.id, s:r.status, n:r.nome, tel:r.telefone,
       pl:r.plano, h:r.horario||'—', v:parseFloat(r.valor)||0,
       pg:r.ultimo_pagto, px:r.prox_vencto
     }));
+    // Merge: banco tem prioridade, locais que não estão no banco completam
     window._alunosDB = rows.length > 0
-      ? [...dbMapped, ...AL.filter(a=>!dbIds.has(a.id))]
+      ? [...dbMapped, ...AL.filter(a=>!dbNomes.has(a.n.trim().toLowerCase()))]
       : AL;
     renderPAlunos();
   } catch(e){
@@ -2089,9 +2090,9 @@ async function navPFin(){
   renderPFin(AL.filter(a=>a.s==='A'), []);
   try {
     const [alRows, pgRows] = await Promise.all([sbGet('alunos','nome'), sbGet('pagamentos','criado_em')]);
-    const dbIds = new Set(alRows.map(r=>r.id));
+    const dbNomesF = new Set(alRows.map(r=>r.nome.trim().toLowerCase()));
     const dbMapped = alRows.filter(r=>r.status==='A').map(r=>({id:r.id,s:r.status,n:r.nome,pl:r.plano,h:r.horario||'—',v:parseFloat(r.valor)||0,pg:r.ultimo_pagto,px:r.prox_vencto}));
-    const at = alRows.length > 0 ? [...dbMapped, ...AL.filter(a=>a.s==='A'&&!dbIds.has(a.id))] : AL.filter(a=>a.s==='A');
+    const at = alRows.length > 0 ? [...dbMapped, ...AL.filter(a=>a.s==='A'&&!dbNomesF.has(a.n.trim().toLowerCase()))] : AL.filter(a=>a.s==='A');
     renderPFin(at, pgRows);
   } catch(e){ console.warn('Supabase fin:', e.message); }
 }
