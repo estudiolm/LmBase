@@ -3162,20 +3162,194 @@ async function navLVendas(){
 }
 
 function renderLVendas(all){
+  const agora = new Date();
+  const mesAtual = agora.getMonth()+1;
+  const anoAtual = agora.getFullYear();
+  const mesStr = String(mesAtual).padStart(2,'0');
+  const anoStr = String(anoAtual).slice(2);
+
+  // Agrupa por mês/ano
+  function getMesAno(data){
+    if(!data||data==='—') return null;
+    const p = data.split('/');
+    if(p.length>=3) return p[1]+'/'+p[2]; // mm/aa
+    return null;
+  }
+
+  const porMes = {};
+  all.forEach(v=>{
+    const ma = getMesAno(v.data);
+    if(!ma) return;
+    if(!porMes[ma]) porMes[ma]={total:0,qtd:0};
+    porMes[ma].total += parseFloat(v.preco)||0;
+    porMes[ma].qtd++;
+  });
+  const mesesOrdenados = Object.entries(porMes).sort((a,b)=>b[0].localeCompare(a[0]));
+
+  // Vendas do mês atual
+  const vendasMes = all.filter(v=>{
+    const ma = getMesAno(v.data);
+    return ma === mesStr+'/'+anoStr;
+  });
+  const totalMes = vendasMes.reduce((s,v)=>s+(parseFloat(v.preco)||0),0);
+  const totalGeral = all.reduce((s,v)=>s+(parseFloat(v.preco)||0),0);
+
   const marcas=[...new Set(all.map(v=>v.marca||'—'))].sort();
-  const lista=all.filter(v=>(!ft||v.item.toLowerCase().includes(ft.toLowerCase())||v.cliente.toLowerCase().includes(ft.toLowerCase()))&&(!filM||v.marca===filM));
+  const lista=all.filter(v=>
+    (!ft||(v.item||'').toLowerCase().includes(ft.toLowerCase())||(v.cliente||'').toLowerCase().includes(ft.toLowerCase()))&&
+    (!filM||v.marca===filM)
+  );
   const tot=lista.reduce((s,v)=>s+(parseFloat(v.preco)||0),0);
-  set('<div class="pt">Vendas</div><div class="ps">'+all.length+' itens · '+fR(all.reduce((s,v)=>s+(parseFloat(v.preco)||0),0))+' faturado</div>'+
-  '<div class="tb"><input class="srch" placeholder="Buscar item ou cliente…" oninput="ft=this.value;renderLVendas(window._vendasCache||[])" value="'+ft+'">'+
-  '<select class="sel" onchange="filM=this.value;renderLVendas(window._vendasCache||[])"><option value="">Todas as marcas</option>'+marcas.map(m=>'<option'+(filM===m?' selected':'')+'>'+m+'</option>').join('')+'</select>'+
-  '<div style="margin-left:auto;display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:#666">'+lista.length+' · <strong style="color:#db2777">'+fR(tot)+'</strong></span>'+
-  '<button class="btn btnp" onclick="abrirNovaVenda()"><i class="ti ti-plus"></i> Nova venda</button></div></div>'+
-  '<div class="tw"><table><thead><tr><th>#</th><th>Item</th><th>Marca</th><th>Cliente</th><th>Data</th><th>Pgto</th><th>Custo</th><th>Preço</th></tr></thead><tbody>'+
-  lista.map(v=>'<tr><td style="color:#aaa">'+v.id+'</td><td>'+v.item+'</td><td><span class="bdg '+marcaBdg(v.marca)+'">'+v.marca+'</span></td>'+
-  '<td>'+v.cliente+'</td><td style="color:#666">'+v.data+'</td><td style="color:#666">'+v.pgto+'</td>'+
-  '<td style="color:#666">'+(v.custo?fR(v.custo):'—')+'</td><td style="color:#db2777;font-weight:500">'+fR(v.preco)+'</td></tr>').join('')+
-  '<tr class="sum-row"><td colspan="7" style="text-align:right;padding:8px 10px">Total</td><td style="padding:8px 10px;color:#db2777">'+fR(tot)+'</td></tr>'+
-  '</tbody></table></div>');
+
+  set(
+    '<div class="pt">Vendas</div>'+
+    '<div class="ps">'+all.length+' itens · '+fR(totalGeral)+' faturado total</div>'+
+
+    // Cards resumo
+    '<div class="metrics3" style="margin-bottom:18px">'+
+    mc('Faturamento total','vp',fR(totalGeral),all.length+' vendas')+
+    mc('Mês atual ('+mesAtual+'/'+anoAtual+')','vg',fR(totalMes),vendasMes.length+' vendas · parcial')+
+    mc('Ticket médio','va',all.length?fR(totalGeral/all.length):'—','por venda')+
+    '</div>'+
+
+    // Faturamento por mês
+    '<div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Faturamento por mês</div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">'+
+    mesesMesOrdenados(mesesOrdenados, mesStr, anoStr)+
+    '</div>'+
+
+    // Filtros e nova venda
+    '<div class="tb">'+
+    '<input class="srch" placeholder="Buscar item ou cliente…" oninput="ft=this.value;renderLVendas(window._vendasCache||[])" value="'+ft+'">'+
+    '<select class="sel" onchange="filM=this.value;renderLVendas(window._vendasCache||[])">'+
+      '<option value="">Todas as marcas</option>'+
+      marcas.map(m=>'<option'+(filM===m?' selected':'')+'>'+m+'</option>').join('')+
+    '</select>'+
+    '<div style="margin-left:auto;display:flex;gap:8px;align-items:center">'+
+    '<span style="font-size:12px;color:var(--brown-light)">'+lista.length+' · <strong style="color:var(--brown-mid)">'+fR(tot)+'</strong></span>'+
+    '<button class="btn btnp" onclick="abrirNovaVenda()"><i class="ti ti-plus"></i> Nova venda</button>'+
+    '</div></div>'+
+
+    // Tabela com botão editar
+    '<div class="tw"><table><thead><tr>'+
+    '<th>#</th><th>Item</th><th>Marca</th><th>Cliente</th><th>Data</th><th>Pgto</th><th>Custo</th><th>Preço</th><th></th>'+
+    '</tr></thead><tbody>'+
+    lista.map((v,i)=>{
+      const idx = (window._vendasCache||all).indexOf(v);
+      return '<tr>'+
+      '<td style="color:var(--brown-light);font-size:11px">'+v.id+'</td>'+
+      '<td style="font-weight:500">'+v.item+'</td>'+
+      '<td><span class="bdg '+marcaBdg(v.marca)+'">'+v.marca+'</span></td>'+
+      '<td>'+v.cliente+'</td>'+
+      '<td style="color:var(--brown-light)">'+v.data+'</td>'+
+      '<td style="color:var(--brown-light)">'+v.pgto+'</td>'+
+      '<td style="color:var(--brown-light)">'+(v.custo?fR(v.custo):'—')+'</td>'+
+      '<td style="color:var(--brown-mid);font-weight:600">'+fR(v.preco)+'</td>'+
+      '<td><button class="btn btns" onclick="abrirEditarVenda('+idx+')"><i class="ti ti-pencil"></i></button></td>'+
+      '</tr>';
+    }).join('')+
+    '<tr class="sum-row"><td colspan="8" style="text-align:right;padding:8px 15px">Total filtrado</td>'+
+    '<td style="padding:8px 15px;color:var(--brown-mid)">'+fR(tot)+'</td></tr>'+
+    '</tbody></table></div>'
+  );
+}
+
+function mesesMesOrdenados(meses, mesAtualStr, anoAtualStr){
+  const nomesMes = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  return meses.slice(0,6).map(([ma,dados])=>{
+    const [mm,aa] = ma.split('/');
+    const isAtual = mm===mesAtualStr && aa===anoAtualStr;
+    return `<div style="background:${isAtual?'rgba(184,146,74,.15)':'var(--glass)'};border:1px solid ${isAtual?'var(--border-str)':'var(--border)'};border-radius:10px;padding:10px 14px;min-width:100px;text-align:center">
+      <div style="font-size:10px;color:var(--brown-light);font-weight:600;text-transform:uppercase;letter-spacing:.06em">${nomesMes[parseInt(mm)]||mm}/${aa}${isAtual?' <span style="color:var(--gold-dark)">●</span>':''}</div>
+      <div style="font-size:15px;font-weight:700;color:var(--brown);margin-top:3px">${fR(dados.total)}</div>
+      <div style="font-size:10px;color:var(--brown-light);margin-top:1px">${dados.qtd} vendas</div>
+    </div>`;
+  }).join('');
+}
+
+function abrirEditarVenda(idx){
+  const v = (window._vendasCache||VENDAS)[idx];
+  if(!v) return;
+  window._vendaEditando = v;
+  abrirModal(
+    '<div class="mdt"><i class="ti ti-pencil" style="margin-right:8px;color:var(--gold-dark)"></i>Editar venda</div>'+
+    '<label class="fl">Item *</label><input class="fi" id="vd_item" value="'+esc(v.item||'')+'">'+
+    '<div class="fr2"><div><label class="fl">Marca</label><select class="fi" id="vd_marca">'+
+      ['Rosa Imperial','Camomila','Mnovo','Mantig','ALAD Amanda','Lm'].map(m=>'<option'+(v.marca===m?' selected':'')+'>'+m+'</option>').join('')+
+    '</select></div>'+
+    '<div><label class="fl">Tamanho</label><input class="fi" id="vd_tam" value="'+(v.tam||v.tamanho||'')+'"></div></div>'+
+    '<div class="fr3">'+
+    '<div><label class="fl">Custo R$</label><input class="fi" id="vd_custo" type="number" value="'+(v.custo||'')+'"></div>'+
+    '<div><label class="fl">Preço R$</label><input class="fi" id="vd_preco" type="number" value="'+(v.preco||'')+'"></div>'+
+    '<div><label class="fl">Desconto %</label><input class="fi" id="vd_desc" type="number" value="0"></div></div>'+
+    '<div class="fr2"><div><label class="fl">Cliente</label><input class="fi" id="vd_cliente" value="'+(v.cliente||'')+'"></div>'+
+    '<div><label class="fl">Data</label><input class="fi" id="vd_data" value="'+(v.data||'')+'"></div></div>'+
+    '<label class="fl">Forma pgto</label><select class="fi" id="vd_pgto">'+
+      ['PIX','Cartão débito','Cartão crédito 2x','Dinheiro','Link de pgto'].map(p=>'<option'+(v.pgto===p?' selected':'')+'>'+p+'</option>').join('')+
+    '</select>'+
+    '<div style="border-top:1px solid var(--border);margin:8px 0 12px;padding-top:12px">'+
+    '<div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px"><i class="ti ti-plus"></i> Adicionar item à mesma venda</div>'+
+    '<div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end">'+
+    '<input class="fi" id="vd_item_extra" placeholder="Nome do item extra (opcional)" style="margin-bottom:0">'+
+    '<button class="btn btns btnp" onclick="adicionarItemVenda()" style="margin-bottom:0;height:38px">+ Adicionar</button>'+
+    '</div>'+
+    '<div id="vd_itens_extra" style="margin-top:6px"></div>'+
+    '</div>'+
+    '<div class="mdf">'+
+    '<button class="btn" onclick="fecharModal()">Cancelar</button>'+
+    '<button class="btn btnp" id="vd_btn" onclick="salvarEdicaoVenda()"><i class="ti ti-check"></i> Salvar</button>'+
+    '</div>'
+  );
+  window._vendaItensExtra = [];
+}
+
+function adicionarItemVenda(){
+  const item = document.getElementById('vd_item_extra').value.trim();
+  if(!item) return;
+  window._vendaItensExtra = window._vendaItensExtra||[];
+  window._vendaItensExtra.push(item);
+  document.getElementById('vd_item_extra').value='';
+  const el = document.getElementById('vd_itens_extra');
+  el.innerHTML = window._vendaItensExtra.map((it,i)=>
+    `<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(184,146,74,.1);border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-size:11px;margin:2px">
+      ${it} <span onclick="window._vendaItensExtra.splice(${i},1);adicionarItemVenda();document.getElementById('vd_item_extra').value=''" style="cursor:pointer;color:var(--brown-light)">×</span>
+    </span>`
+  ).join('');
+}
+
+async function salvarEdicaoVenda(){
+  const v = window._vendaEditando;
+  if(!v) return;
+  const btn = document.getElementById('vd_btn'); btn.disabled=true; btn.textContent='Salvando…';
+  const preco = parseFloat(document.getElementById('vd_preco').value)||0;
+  const desc  = parseFloat(document.getElementById('vd_desc').value)||0;
+  const vf    = desc>0 ? preco*(1-desc/100) : preco;
+
+  const dados = {
+    item:      document.getElementById('vd_item').value.trim(),
+    marca:     document.getElementById('vd_marca').value,
+    tamanho:   document.getElementById('vd_tam').value||null,
+    custo:     parseFloat(document.getElementById('vd_custo').value)||null,
+    preco:     vf,
+    cliente:   document.getElementById('vd_cliente').value||null,
+    data_venda:document.getElementById('vd_data').value||null,
+    forma_pgto:document.getElementById('vd_pgto').value||null,
+  };
+
+  try {
+    // Atualiza venda principal
+    if(v.id) await sbUpdate('vendas', v.id, dados);
+
+    // Insere itens extras como novas vendas ligadas ao mesmo cliente/data
+    const itensExtra = window._vendaItensExtra||[];
+    for(const item of itensExtra){
+      await sbInsert('vendas',{...dados, item, custo:null, preco:0});
+    }
+
+    await registrarLog('editou venda','vendas', dados.item+(itensExtra.length?' + '+itensExtra.length+' item(ns)':''));
+    fecharModal();
+    navLVendas();
+  } catch(e){ btn.disabled=false; btn.textContent='Salvar'; alert('Erro: '+e.message); }
 }
 
 async function navLEstoque(){
@@ -4037,8 +4211,70 @@ async function rFinGeral(){
   '<div style="font-size:11px;font-weight:600;color:#8B2E1A;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">⚠ Alunos sem data de vencimento</div>'+
   '<div class="tw"><table><thead><tr><th>Aluno</th><th>Plano</th><th>Horário</th><th>Valor</th></tr></thead><tbody>'+
   ativos.filter(a=>!a.px||a.px==='parceria').map(a=>'<tr><td>'+ncell(a)+'</td><td>'+a.pl+'</td><td style="color:#7A5230">'+(a.h||'—')+'</td><td style="color:#B8924A;font-weight:600">R$ '+a.v+'</td></tr>').join('')+
-  '</tbody></table></div>':'')
+  '</tbody></table></div>':'')+
+
+  // ── CONSOLIDADO MENSAL ─────────────────────────────────────
+  blocoMensalConsolidado(pagsBanco, todasVendas)
   );
+}
+
+function blocoMensalConsolidado(pagamentos, vendas){
+  const agora = new Date();
+  const nomesMes = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+  // Agrupa pagamentos de pilates por mês
+  const pgtosMes = {};
+  pagamentos.forEach(p=>{
+    if(!p.data_pgto) return;
+    const pts = p.data_pgto.split('/');
+    if(pts.length<3) return;
+    const key = pts[1]+'/20'+pts[2]; // mm/yyyy
+    if(!pgtosMes[key]) pgtosMes[key]={pilates:0,qtdPilates:0};
+    pgtosMes[key].pilates += parseFloat(p.valor)||0;
+    pgtosMes[key].qtdPilates++;
+  });
+
+  // Agrupa vendas por mês
+  vendas.forEach(v=>{
+    if(!v.data||v.data==='—') return;
+    const pts = v.data.split('/');
+    if(pts.length<3) return;
+    const key = pts[1]+'/20'+pts[2];
+    if(!pgtosMes[key]) pgtosMes[key]={pilates:0,qtdPilates:0};
+    pgtosMes[key].loja = (pgtosMes[key].loja||0) + (parseFloat(v.preco)||0);
+    pgtosMes[key].qtdLoja = (pgtosMes[key].qtdLoja||0)+1;
+  });
+
+  const meses = Object.entries(pgtosMes).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,6);
+  if(!meses.length) return '';
+
+  const mesAtualKey = String(agora.getMonth()+1).padStart(2,'0')+'/'+agora.getFullYear();
+
+  return '<div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em;margin:20px 0 10px">'+
+  '<i class="ti ti-calendar-stats"></i> Consolidado mensal</div>'+
+  '<div class="tw"><table><thead><tr>'+
+  '<th>Mês</th><th>Pilates recebido</th><th>Loja</th><th>Total</th><th></th>'+
+  '</tr></thead><tbody>'+
+  meses.map(([key,d])=>{
+    const [mm,yyyy] = key.split('/');
+    const isAtual = key===mesAtualKey;
+    const total = (d.pilates||0)+(d.loja||0);
+    return '<tr style="'+(isAtual?'background:rgba(201,169,110,.06)':'')+'">'+
+    '<td style="font-weight:'+(isAtual?'700':'500')+'">'+
+      nomesMes[parseInt(mm)]+' '+yyyy+
+      (isAtual?' <span style="font-size:10px;color:var(--gold-dark)">● atual</span>':'')+
+    '</td>'+
+    '<td style="color:var(--gold-dark)">'+fR(d.pilates||0)+
+      '<span style="font-size:10px;color:var(--brown-light);margin-left:4px">'+( d.qtdPilates||0)+' pgtos</span>'+
+    '</td>'+
+    '<td style="color:var(--brown-mid)">'+fR(d.loja||0)+
+      (d.qtdLoja?'<span style="font-size:10px;color:var(--brown-light);margin-left:4px">'+d.qtdLoja+' vendas</span>':'')+
+    '</td>'+
+    '<td style="font-weight:700;color:var(--brown)">'+fR(total)+'</td>'+
+    '<td style="font-size:11px;color:var(--brown-light)">'+(isAtual?'parcial':'')+'</td>'+
+    '</tr>';
+  }).join('')+
+  '</tbody></table></div>';
 }
 
 // ═══════════════════════════════════════════════════════════
