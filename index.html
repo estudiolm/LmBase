@@ -875,6 +875,20 @@ select.fi { cursor:pointer; }
   .sb { padding-bottom:env(safe-area-inset-bottom) !important; }
   .mn { padding-bottom:calc(96px + env(safe-area-inset-bottom)) !important; }
 }
+/* ── BARCODE ─────────────────────────────────────────────── */
+.barcode-box {
+  display:flex; align-items:center; gap:10px;
+  background:rgba(201,169,110,.06);
+  border:1.5px dashed rgba(201,169,110,.4);
+  border-radius:var(--radius-sm); padding:10px 14px; margin-bottom:12px;
+  transition:all .2s var(--ease);
+}
+.barcode-box:focus-within { border-color:var(--gold); background:rgba(201,169,110,.1); box-shadow:0 0 0 3px rgba(201,169,110,.12); }
+.barcode-box i { font-size:22px; color:var(--gold-dark); flex-shrink:0; }
+.barcode-box input { border:none; background:transparent; font-size:14px; color:var(--brown); font-family:var(--font-sans); flex:1; outline:none; letter-spacing:.06em; }
+.barcode-box input::placeholder { color:rgba(154,112,80,.4); font-size:12px; letter-spacing:0; }
+.scan-flash { animation:scanFlash .4s ease; }
+@keyframes scanFlash { 0%{background:rgba(74,122,40,.2)} 100%{background:rgba(201,169,110,.06)} }
 </style>
 </head>
 <body>
@@ -2034,6 +2048,243 @@ function gcalFiltrarDia(){ }
 function renderEventList(){ return ''; }
 
 // ═══════════════════════════════════════════════════════════
+// LEITOR DE CÓDIGO DE BARRAS
+// ═══════════════════════════════════════════════════════════
+
+// Buffer para captura de leitores de código de barras (USB HID)
+// Leitores tipicamente enviam os caracteres rapidamente + Enter
+let _barcodeBuffer = '';
+let _barcodeTimer  = null;
+let _barcodeAtivo  = false;
+let _barcodeCallback = null;
+
+function ativarLeitorCodigoBarras(callback){
+  _barcodeCallback = callback;
+  _barcodeAtivo = true;
+  _barcodeBuffer = '';
+}
+
+function desativarLeitorCodigoBarras(){
+  _barcodeAtivo = false;
+  _barcodeCallback = null;
+  _barcodeBuffer = '';
+}
+
+// Captura global de teclado para o leitor
+document.addEventListener('keydown', function(e){
+  if(!_barcodeAtivo) return;
+  if(e.key === 'Enter' && _barcodeBuffer.length > 3){
+    const codigo = _barcodeBuffer.trim();
+    _barcodeBuffer = '';
+    clearTimeout(_barcodeTimer);
+    if(_barcodeCallback) _barcodeCallback(codigo);
+    return;
+  }
+  if(e.key.length === 1){
+    _barcodeBuffer += e.key;
+    clearTimeout(_barcodeTimer);
+    _barcodeTimer = setTimeout(()=>{ _barcodeBuffer=''; }, 200);
+  }
+});
+
+// ── BIPAGEM NO ESTOQUE ─────────────────────────────────────
+function abrirBipagemEstoque(){
+  abrirModal(
+    '<div class="mdt"><i class="ti ti-barcode" style="margin-right:8px;color:var(--gold-dark)"></i>Entrada de estoque — Bipagem</div>'+
+    '<p style="font-size:13px;color:var(--brown-light);margin-bottom:16px">Bipe o código de barras de cada peça. O sistema adiciona automaticamente ao estoque.</p>'+
+
+    '<div class="barcode-box" id="barcodeBox">'+
+    '<i class="ti ti-barcode-off" id="barcodeIcon"></i>'+
+    '<input type="text" id="barcodeInput" placeholder="Aguardando bipagem ou digite o código…" autofocus '+
+    'oninput="processarCodigoManual(this.value)" onkeydown="if(event.key===\'Enter\')processarCodigoManual(this.value,true)">'+
+    '<button class="btn btns btnb" onclick="processarCodigoManual(document.getElementById(\'barcodeInput\').value,true)">OK</button>'+
+    '</div>'+
+
+    '<div id="barcodeResult" style="margin-bottom:12px"></div>'+
+
+    '<div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Itens bipados nesta sessão</div>'+
+    '<div id="barcodeLog" style="max-height:200px;overflow-y:auto;background:var(--glass);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;font-size:12px;color:var(--brown-light)">'+
+    '<span style="opacity:.5">Nenhum item ainda…</span></div>'+
+
+    '<div class="mdf"><button class="btn" onclick="fecharModal();desativarLeitorCodigoBarras()">Fechar</button></div>'
+  );
+
+  window._bipagemLog = [];
+  window._bipagemContadores = {};
+
+  // Ativa leitor físico
+  setTimeout(()=>{
+    const input = document.getElementById('barcodeInput');
+    if(input) input.focus();
+    ativarLeitorCodigoBarras((codigo)=>{
+      if(input){ input.value = codigo; }
+      processarCodigoManual(codigo, true);
+    });
+  }, 100);
+}
+
+async function processarCodigoManual(codigo, confirmar=false){
+  codigo = (codigo||'').trim();
+  if(!codigo) return;
+  if(!confirmar) return; // espera Enter
+
+  const input = document.getElementById('barcodeInput');
+  const box   = document.getElementById('barcodeBox');
+  const res   = document.getElementById('barcodeResult');
+  if(input) input.value = '';
+
+  // Efeito visual
+  if(box){ box.classList.add('scan-flash'); setTimeout(()=>box.classList.remove('scan-flash'),400); }
+
+  try {
+    // Busca no estoque por código
+    const r = await fetchWithTimeout(
+      `${SB_URL}/rest/v1/estoque?codigo_barras=eq.${encodeURIComponent(codigo)}&limit=1`,
+      { headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY} }
+    );
+    const lista = await r.json();
+
+    if(lista[0]){
+      const peca = lista[0];
+      const novaQtd = (peca.quantidade||0)+1;
+      await sbUpdate('estoque', peca.id, {quantidade: novaQtd});
+
+      window._bipagemContadores[codigo] = (window._bipagemContadores[codigo]||0)+1;
+      window._bipagemLog.unshift({codigo, item:peca.item, qtd:novaQtd, ok:true});
+
+      if(res) res.innerHTML = `<div style="background:rgba(74,122,40,.1);border:1px solid rgba(74,122,40,.2);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px">
+        <i class="ti ti-check" style="color:#3A6A14;font-size:18px"></i>
+        <div><strong style="color:var(--brown)">${peca.item}</strong> <span style="color:var(--brown-light)">${peca.tamanho||''}</span><br>
+        <span style="font-size:11px;color:#3A6A14">Estoque atualizado: ${peca.quantidade||0} → ${novaQtd}</span></div></div>`;
+    } else {
+      // Código não encontrado — pergunta se quer cadastrar
+      window._bipagemLog.unshift({codigo, item:'Desconhecido', ok:false});
+      if(res) res.innerHTML = `<div style="background:rgba(184,146,74,.1);border:1px solid rgba(184,146,74,.3);border-radius:8px;padding:10px 14px">
+        <div style="font-weight:600;color:var(--brown)">Código não cadastrado: ${codigo}</div>
+        <div style="font-size:11px;color:var(--brown-light);margin:4px 0 8px">Esta peça não existe no estoque ainda.</div>
+        <button class="btn btns btnb" onclick="abrirCadastrarPecaCodigo('${codigo}')">+ Cadastrar esta peça</button></div>`;
+    }
+  } catch(e){
+    if(res) res.innerHTML = `<div style="color:#8B2E1A;font-size:12px">Erro: ${e.message}</div>`;
+  }
+
+  // Atualiza log visual
+  atualizarBipagemLog();
+  if(input) input.focus();
+}
+
+function atualizarBipagemLog(){
+  const el = document.getElementById('barcodeLog');
+  if(!el) return;
+  const log = window._bipagemLog||[];
+  if(!log.length){ el.innerHTML = '<span style="opacity:.5">Nenhum item ainda…</span>'; return; }
+  el.innerHTML = log.slice(0,20).map(l=>
+    `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
+      <i class="ti ${l.ok?'ti-check':'ti-alert-circle'}" style="color:${l.ok?'#3A6A14':'#8B2E1A'};font-size:14px"></i>
+      <span style="flex:1">${l.item}</span>
+      <span style="font-size:10px;color:var(--brown-light);font-family:monospace">${l.codigo}</span>
+    </div>`
+  ).join('');
+}
+
+function abrirCadastrarPecaCodigo(codigo){
+  fecharModal();
+  abrirModal(
+    '<div class="mdt">Cadastrar peça — código '+codigo+'</div>'+
+    '<div class="barcode-box" style="margin-bottom:16px"><i class="ti ti-barcode" style="color:var(--gold-dark)"></i>'+
+    '<span style="font-size:13px;font-weight:600;color:var(--brown);letter-spacing:.06em">'+codigo+'</span></div>'+
+    '<label class="fl">Nome da peça *</label><input class="fi" id="pc_item" placeholder="Ex: Calça Legging Preta M">'+
+    '<div class="fr2"><div><label class="fl">Marca</label><select class="fi" id="pc_marca">'+
+      '<option value="">—</option>'+['Rosa Imperial','Camomila','Mnovo','Mantig','ALAD Amanda','Lm'].map(m=>'<option>'+m+'</option>').join('')+
+    '</select></div>'+
+    '<div><label class="fl">Tamanho</label><input class="fi" id="pc_tam" placeholder="P / M / G"></div></div>'+
+    '<label class="fl">Quantidade inicial</label><input class="fi" id="pc_qtd" type="number" value="1">'+
+    '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button>'+
+    '<button class="btn btnb" onclick="confirmarCadastrarPecaCodigo(\''+codigo+'\')">Cadastrar</button></div>'
+  );
+}
+
+async function confirmarCadastrarPecaCodigo(codigo){
+  const item = document.getElementById('pc_item').value.trim();
+  if(!item){ alert('Informe o nome.'); return; }
+  try {
+    await sbInsert('estoque',{
+      item, codigo_barras:codigo,
+      marca:document.getElementById('pc_marca').value||null,
+      tamanho:document.getElementById('pc_tam').value||null,
+      quantidade:parseInt(document.getElementById('pc_qtd').value)||1
+    });
+    await registrarLog('cadastrou peça','estoque','Nova peça: '+item+' (código: '+codigo+')');
+    fecharModal();
+    navLEstoque();
+  } catch(e){ alert('Erro: '+e.message); }
+}
+
+// ── BIPAGEM NA VENDA ───────────────────────────────────────
+function ativarBipVenda(){
+  const input = document.getElementById('vd_codigo_barras');
+  if(!input) return;
+  input.focus();
+  ativarLeitorCodigoBarras(async (codigo)=>{
+    input.value = codigo;
+    await buscarPecaPorCodigo(codigo);
+  });
+}
+
+async function buscarPecaPorCodigo(codigo){
+  if(!codigo) return;
+  codigo = codigo.trim();
+  const input = document.getElementById('vd_codigo_barras');
+  const res   = document.getElementById('vd_codigo_result');
+
+  try {
+    const r = await fetchWithTimeout(
+      `${SB_URL}/rest/v1/estoque?codigo_barras=eq.${encodeURIComponent(codigo)}&limit=1`,
+      { headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY} }
+    );
+    const lista = await r.json();
+    if(lista[0]){
+      const peca = lista[0];
+      // Preenche campos automaticamente
+      const itemInput = document.getElementById('vd_item');
+      const marcaInput = document.getElementById('vd_marca');
+      if(itemInput) itemInput.value = peca.item;
+      if(marcaInput){
+        for(let o of marcaInput.options)
+          if(o.value===peca.marca) o.selected=true;
+      }
+      if(res) res.innerHTML = `<div style="font-size:11px;background:rgba(74,122,40,.1);border:1px solid rgba(74,122,40,.2);border-radius:6px;padding:6px 10px;color:#3A6A14">
+        ✓ ${peca.item} ${peca.tamanho||''} — estoque atual: ${peca.quantidade||0} un.</div>`;
+      window._vendaCodigoBarras = codigo;
+    } else {
+      if(res) res.innerHTML = `<div style="font-size:11px;color:#8B2E1A">Código não encontrado no estoque. Verifique ou cadastre a peça primeiro.</div>`;
+    }
+  } catch(e){}
+}
+
+// ── EXCLUIR VENDA ──────────────────────────────────────────
+async function excluirVenda(){
+  const v = window._vendaEditando;
+  if(!v) return;
+  if(!confirm('Excluir a venda de "'+v.item+'"?\n\nEsta ação não pode ser desfeita.')) return;
+  try {
+    if(v.id) await sbDelete('vendas', v.id);
+    // Remove do cache
+    if(window._vendasCache){
+      const i = window._vendasCache.findIndex(x=>x.id===v.id);
+      if(i>=0) window._vendasCache.splice(i,1);
+    }
+    if(window._vendasLista){
+      const i = window._vendasLista.findIndex(x=>x.id===v.id);
+      if(i>=0) window._vendasLista.splice(i,1);
+    }
+    await registrarLog('excluiu venda','vendas', v.item+' — '+fR(v.preco));
+    fecharModal();
+    navLVendas();
+  } catch(e){ alert('Erro: '+e.message); }
+}
+
+// ═══════════════════════════════════════════════════════════
 // DADOS — PILATES
 // ═══════════════════════════════════════════════════════════
 const AL=[
@@ -2671,6 +2922,7 @@ function verAlunoDetalhe(a){
   (a.s==='E'?'<button class="btn btnb" onclick="converterAtivoObj()"><i class="ti ti-user-check"></i> Converter para ativo</button>':'')+
   (a.s==='P'?'<button class="btn btnb" onclick="alert(\'Agendar experimental!\')"><i class="ti ti-calendar-plus"></i> Agendar experimental</button>':'')+
   (a.s==='A'?'<button class="btn" style="color:var(--gold-dark);border-color:rgba(184,146,74,.4)" onclick="pausarAluno()"><i class="ti ti-pause-circle"></i> Pausar aluno</button>':'')+
+  '<button class="btn" style="color:#8B2E1A;border-color:rgba(139,46,26,.3)" onclick="excluirAluno()"><i class="ti ti-trash"></i> Excluir cadastro</button>'+
   (isPausado?'<button class="btn btnb" onclick="reativarAluno()"><i class="ti ti-player-play"></i> Reativar aluno</button>':'')+
   '</div>');
   window._alunoAtual = a;
@@ -2824,10 +3076,35 @@ async function garantirAlunoBanco(a){
   }
 }
 
-async function converterAtivoObj(){
+async function excluirAluno(){
   const a = window._alunoAtual;
   if(!a) return;
-  if(!confirm('Converter '+a.n+' para Ativo?')) return;
+  if(!confirm('Excluir o cadastro de '+a.n+'?\n\nEsta ação não pode ser desfeita.')) return;
+  try {
+    // Remove do banco se existir
+    const r = await fetchWithTimeout(
+      `${SB_URL}/rest/v1/alunos?nome=eq.${encodeURIComponent(a.n)}&limit=1`,
+      { headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY} }
+    );
+    const lista = await r.json();
+    if(lista[0]){
+      await sbDelete('alunos', lista[0].id);
+    }
+    // Remove do cache local
+    const remover = (arr) => {
+      const i = arr.findIndex(x=>x.n===a.n);
+      if(i>=0) arr.splice(i,1);
+    };
+    remover(AL);
+    if(window._alunosDB) remover(window._alunosDB);
+
+    await registrarLog('excluiu aluno','alunos', a.n+' ('+( a.s==='E'?'Experimental':'Prospect')+')');
+    navPAlunos();
+  } catch(e){ alert('Erro ao excluir: '+e.message); }
+}
+
+async function converterAtivoObj(){
+  const a = window._alunoAtual;
   try {
     if(a.id && typeof a.id==='number' && a.id>1000){
       await sbUpdate('alunos', a.id, {status:'A'});
@@ -3165,60 +3442,73 @@ function renderLVendas(all){
   const agora = new Date();
   const mesAtual = agora.getMonth()+1;
   const anoAtual = agora.getFullYear();
-  const mesStr = String(mesAtual).padStart(2,'0');
-  const anoStr = String(anoAtual).slice(2);
 
-  // Agrupa por mês/ano
-  function getMesAno(data){
-    if(!data||data==='—') return null;
-    const p = data.split('/');
-    if(p.length>=3) return p[1]+'/'+p[2]; // mm/aa
-    return null;
+  // Normaliza data para dd/mm/aa independente do formato
+  function normData(data){
+    if(!data||data==='—'||data==='null'||data===null) return null;
+    const s = String(data);
+    // formato ISO: 2026-05-26 → 26/05/26
+    if(s.match(/^\d{4}-\d{2}-\d{2}/)){
+      const [y,m,d] = s.split('T')[0].split('-');
+      return d+'/'+m+'/'+y.slice(2);
+    }
+    return s; // já está em dd/mm/aa
   }
 
+  function getMesAnoNum(data){
+    const d = normData(data);
+    if(!d) return null;
+    const p = d.split('/');
+    if(p.length<3) return null;
+    return { mes:parseInt(p[1]), ano:parseInt('20'+p[2]) };
+  }
+
+  // Agrupa por mês
   const porMes = {};
   all.forEach(v=>{
-    const ma = getMesAno(v.data);
+    const ma = getMesAnoNum(v.data);
     if(!ma) return;
-    if(!porMes[ma]) porMes[ma]={total:0,qtd:0};
-    porMes[ma].total += parseFloat(v.preco)||0;
-    porMes[ma].qtd++;
+    const key = String(ma.mes).padStart(2,'0')+'/'+ma.ano;
+    if(!porMes[key]) porMes[key]={total:0,qtd:0};
+    porMes[key].total += parseFloat(v.preco)||0;
+    porMes[key].qtd++;
   });
   const mesesOrdenados = Object.entries(porMes).sort((a,b)=>b[0].localeCompare(a[0]));
 
-  // Vendas do mês atual
+  // Mês atual
+  const mesAtualKey = String(mesAtual).padStart(2,'0')+'/'+anoAtual;
   const vendasMes = all.filter(v=>{
-    const ma = getMesAno(v.data);
-    return ma === mesStr+'/'+anoStr;
+    const ma = getMesAnoNum(v.data);
+    return ma && ma.mes===mesAtual && ma.ano===anoAtual;
   });
-  const totalMes = vendasMes.reduce((s,v)=>s+(parseFloat(v.preco)||0),0);
+  const totalMes   = vendasMes.reduce((s,v)=>s+(parseFloat(v.preco)||0),0);
   const totalGeral = all.reduce((s,v)=>s+(parseFloat(v.preco)||0),0);
 
-  const marcas=[...new Set(all.map(v=>v.marca||'—'))].sort();
+  const marcas=[...new Set(all.map(v=>v.marca||'—').filter(m=>m&&m!=='null'))].sort();
   const lista=all.filter(v=>
     (!ft||(v.item||'').toLowerCase().includes(ft.toLowerCase())||(v.cliente||'').toLowerCase().includes(ft.toLowerCase()))&&
     (!filM||v.marca===filM)
   );
   const tot=lista.reduce((s,v)=>s+(parseFloat(v.preco)||0),0);
 
+  // Salva índices globais para edição
+  window._vendasLista = lista;
+
   set(
     '<div class="pt">Vendas</div>'+
     '<div class="ps">'+all.length+' itens · '+fR(totalGeral)+' faturado total</div>'+
 
-    // Cards resumo
     '<div class="metrics3" style="margin-bottom:18px">'+
     mc('Faturamento total','vp',fR(totalGeral),all.length+' vendas')+
     mc('Mês atual ('+mesAtual+'/'+anoAtual+')','vg',fR(totalMes),vendasMes.length+' vendas · parcial')+
-    mc('Ticket médio','va',all.length?fR(totalGeral/all.length):'—','por venda')+
+    mc('Ticket médio','va',all.length?fR(Math.round(totalGeral/all.length)):'—','por venda')+
     '</div>'+
 
-    // Faturamento por mês
     '<div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Faturamento por mês</div>'+
     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">'+
-    mesesMesOrdenados(mesesOrdenados, mesStr, anoStr)+
+    mesesMesOrdenados(mesesOrdenados, mesAtualKey)+
     '</div>'+
 
-    // Filtros e nova venda
     '<div class="tb">'+
     '<input class="srch" placeholder="Buscar item ou cliente…" oninput="ft=this.value;renderLVendas(window._vendasCache||[])" value="'+ft+'">'+
     '<select class="sel" onchange="filM=this.value;renderLVendas(window._vendasCache||[])">'+
@@ -3230,47 +3520,56 @@ function renderLVendas(all){
     '<button class="btn btnp" onclick="abrirNovaVenda()"><i class="ti ti-plus"></i> Nova venda</button>'+
     '</div></div>'+
 
-    // Tabela com botão editar
     '<div class="tw"><table><thead><tr>'+
-    '<th>#</th><th>Item</th><th>Marca</th><th>Cliente</th><th>Data</th><th>Pgto</th><th>Custo</th><th>Preço</th><th></th>'+
+    '<th>#</th><th>Item</th><th>Marca</th><th>Cliente</th><th>Data</th><th>Pgto</th><th>Preço</th><th></th>'+
     '</tr></thead><tbody>'+
-    lista.map((v,i)=>{
-      const idx = (window._vendasCache||all).indexOf(v);
-      return '<tr>'+
-      '<td style="color:var(--brown-light);font-size:11px">'+v.id+'</td>'+
-      '<td style="font-weight:500">'+v.item+'</td>'+
-      '<td><span class="bdg '+marcaBdg(v.marca)+'">'+v.marca+'</span></td>'+
-      '<td>'+v.cliente+'</td>'+
-      '<td style="color:var(--brown-light)">'+v.data+'</td>'+
-      '<td style="color:var(--brown-light)">'+v.pgto+'</td>'+
-      '<td style="color:var(--brown-light)">'+(v.custo?fR(v.custo):'—')+'</td>'+
+    lista.map((v,i)=>
+      '<tr onclick="abrirEditarVenda('+i+')" style="cursor:pointer">'+
+      '<td style="color:var(--brown-light);font-size:11px">'+( i+1)+'</td>'+
+      '<td style="font-weight:500">'+( v.item||'—')+'</td>'+
+      '<td>'+(v.marca&&v.marca!=='null'?'<span class="bdg '+marcaBdg(v.marca)+'">'+v.marca+'</span>':'—')+'</td>'+
+      '<td>'+(v.cliente&&v.cliente!=='null'?v.cliente:'—')+'</td>'+
+      '<td style="color:var(--brown-light)">'+(normData(v.data)||'—')+'</td>'+
+      '<td style="color:var(--brown-light)">'+(v.pgto&&v.pgto!=='null'?v.pgto:'—')+'</td>'+
       '<td style="color:var(--brown-mid);font-weight:600">'+fR(v.preco)+'</td>'+
-      '<td><button class="btn btns" onclick="abrirEditarVenda('+idx+')"><i class="ti ti-pencil"></i></button></td>'+
-      '</tr>';
-    }).join('')+
-    '<tr class="sum-row"><td colspan="8" style="text-align:right;padding:8px 15px">Total filtrado</td>'+
-    '<td style="padding:8px 15px;color:var(--brown-mid)">'+fR(tot)+'</td></tr>'+
+      '<td><button class="btn btns" onclick="event.stopPropagation();abrirEditarVenda('+i+')"><i class="ti ti-pencil"></i></button></td>'+
+      '</tr>'
+    ).join('')+
+    '<tr class="sum-row"><td colspan="6" style="text-align:right;padding:8px 15px">Total filtrado</td>'+
+    '<td style="padding:8px 15px;color:var(--brown-mid)">'+fR(tot)+'</td><td></td></tr>'+
     '</tbody></table></div>'
   );
 }
 
-function mesesMesOrdenados(meses, mesAtualStr, anoAtualStr){
+function mesesMesOrdenados(meses, mesAtualKey){
   const nomesMes = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-  return meses.slice(0,6).map(([ma,dados])=>{
-    const [mm,aa] = ma.split('/');
-    const isAtual = mm===mesAtualStr && aa===anoAtualStr;
-    return `<div style="background:${isAtual?'rgba(184,146,74,.15)':'var(--glass)'};border:1px solid ${isAtual?'var(--border-str)':'var(--border)'};border-radius:10px;padding:10px 14px;min-width:100px;text-align:center">
-      <div style="font-size:10px;color:var(--brown-light);font-weight:600;text-transform:uppercase;letter-spacing:.06em">${nomesMes[parseInt(mm)]||mm}/${aa}${isAtual?' <span style="color:var(--gold-dark)">●</span>':''}</div>
-      <div style="font-size:15px;font-weight:700;color:var(--brown);margin-top:3px">${fR(dados.total)}</div>
-      <div style="font-size:10px;color:var(--brown-light);margin-top:1px">${dados.qtd} vendas</div>
+  return meses.slice(0,6).map(([key,dados])=>{
+    const [mm,yyyy] = key.split('/');
+    const isAtual = key===mesAtualKey;
+    return `<div style="background:${isAtual?'rgba(201,169,110,.15)':'var(--glass)'};border:1px solid ${isAtual?'var(--border-str)':'var(--border)'};border-radius:10px;padding:10px 14px;min-width:100px;text-align:center;box-shadow:var(--shadow-sm)">
+      <div style="font-size:10px;color:var(--brown-light);font-weight:700;text-transform:uppercase;letter-spacing:.06em">${nomesMes[parseInt(mm)]||mm}/${yyyy.slice(2)}${isAtual?' <span style="color:var(--gold-dark)">●</span>':''}</div>
+      <div style="font-size:16px;font-weight:700;color:var(--brown);margin-top:4px">${fR(dados.total)}</div>
+      <div style="font-size:10px;color:var(--brown-light);margin-top:2px">${dados.qtd} vendas</div>
     </div>`;
   }).join('');
 }
 
 function abrirEditarVenda(idx){
-  const v = (window._vendasCache||VENDAS)[idx];
+  const v = (window._vendasLista||window._vendasCache||VENDAS)[idx];
   if(!v) return;
   window._vendaEditando = v;
+  window._vendaEditIdx = idx;
+
+  function normData(data){
+    if(!data||data==='—'||data==='null'||data===null) return '';
+    const s = String(data);
+    if(s.match(/^\d{4}-\d{2}-\d{2}/)){
+      const [y,m,d] = s.split('T')[0].split('-');
+      return d+'/'+m+'/'+y.slice(2);
+    }
+    return s;
+  }
+
   abrirModal(
     '<div class="mdt"><i class="ti ti-pencil" style="margin-right:8px;color:var(--gold-dark)"></i>Editar venda</div>'+
     '<label class="fl">Item *</label><input class="fi" id="vd_item" value="'+esc(v.item||'')+'">'+
@@ -3282,20 +3581,21 @@ function abrirEditarVenda(idx){
     '<div><label class="fl">Custo R$</label><input class="fi" id="vd_custo" type="number" value="'+(v.custo||'')+'"></div>'+
     '<div><label class="fl">Preço R$</label><input class="fi" id="vd_preco" type="number" value="'+(v.preco||'')+'"></div>'+
     '<div><label class="fl">Desconto %</label><input class="fi" id="vd_desc" type="number" value="0"></div></div>'+
-    '<div class="fr2"><div><label class="fl">Cliente</label><input class="fi" id="vd_cliente" value="'+(v.cliente||'')+'"></div>'+
-    '<div><label class="fl">Data</label><input class="fi" id="vd_data" value="'+(v.data||'')+'"></div></div>'+
+    '<div class="fr2"><div><label class="fl">Cliente</label><input class="fi" id="vd_cliente" value="'+esc(v.cliente&&v.cliente!=='null'?v.cliente:'')+'"></div>'+
+    '<div><label class="fl">Data (dd/mm/aa)</label><input class="fi" id="vd_data" value="'+normData(v.data)+'"></div></div>'+
     '<label class="fl">Forma pgto</label><select class="fi" id="vd_pgto">'+
       ['PIX','Cartão débito','Cartão crédito 2x','Dinheiro','Link de pgto'].map(p=>'<option'+(v.pgto===p?' selected':'')+'>'+p+'</option>').join('')+
     '</select>'+
     '<div style="border-top:1px solid var(--border);margin:8px 0 12px;padding-top:12px">'+
-    '<div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px"><i class="ti ti-plus"></i> Adicionar item à mesma venda</div>'+
+    '<div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Adicionar item à mesma venda</div>'+
     '<div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end">'+
     '<input class="fi" id="vd_item_extra" placeholder="Nome do item extra (opcional)" style="margin-bottom:0">'+
-    '<button class="btn btns btnp" onclick="adicionarItemVenda()" style="margin-bottom:0;height:38px">+ Adicionar</button>'+
+    '<button class="btn btns btnp" onclick="adicionarItemVenda()" style="height:38px">+ Add</button>'+
     '</div>'+
     '<div id="vd_itens_extra" style="margin-top:6px"></div>'+
     '</div>'+
     '<div class="mdf">'+
+    '<button class="btn" style="color:#8B2E1A;border-color:rgba(139,46,26,.3)" onclick="excluirVenda()"><i class="ti ti-trash"></i> Excluir</button>'+
     '<button class="btn" onclick="fecharModal()">Cancelar</button>'+
     '<button class="btn btnp" id="vd_btn" onclick="salvarEdicaoVenda()"><i class="ti ti-check"></i> Salvar</button>'+
     '</div>'
@@ -3371,7 +3671,9 @@ function renderLEstoque(all){
   set('<div class="pt">Estoque</div><div class="ps">'+all.length+' modelos · '+total+' unidades · '+zeros+' zeradas</div>'+
   '<div class="metrics3">'+mc('Total em estoque','vi',total,'unidades')+mc('Peças zeradas','vr',zeros,'sem estoque')+mc('Modelos','vg',all.length,'cadastrados')+'</div>'+
   '<div class="tb"><input class="srch" placeholder="Buscar peça ou marca…" oninput="ft=this.value;renderLEstoque(window._estoqueCache||[])" value="'+ft+'">'+
-  '<div style="margin-left:auto"><button class="btn btnp" onclick="abrirNovaPeca()"><i class="ti ti-plus"></i> Nova peça</button></div></div>'+
+  '<div style="margin-left:auto;display:flex;gap:8px">'+
+  '<button class="btn" onclick="abrirBipagemEstoque()"><i class="ti ti-barcode"></i> Bipar entrada</button>'+
+  '<button class="btn btnp" onclick="abrirNovaPeca()"><i class="ti ti-plus"></i> Nova peça</button></div></div>'+
   '<div class="card-grid">'+
   lista.map(e=>{
     const q=qtdN(e.qtd); const cls=q===0?'s0':q<=1?'slow':'sok';
@@ -3600,7 +3902,23 @@ async function confirmarVenda(){
       cliente:document.getElementById('vd_cliente').value||null,
       data_venda:document.getElementById('vd_data').value||null,
       forma_pgto:document.getElementById('vd_pgto').value||null,
+      codigo_barras:window._vendaCodigoBarras||null,
     });
+
+    // Dá baixa automática no estoque se tiver código de barras
+    if(window._vendaCodigoBarras){
+      try {
+        const r = await fetchWithTimeout(
+          `${SB_URL}/rest/v1/estoque?codigo_barras=eq.${encodeURIComponent(window._vendaCodigoBarras)}&limit=1`,
+          { headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY} }
+        );
+        const lista = await r.json();
+        if(lista[0] && lista[0].quantidade > 0){
+          await sbUpdate('estoque', lista[0].id, {quantidade: lista[0].quantidade - 1});
+        }
+      } catch(e){ console.warn('Baixa estoque:', e.message); }
+    }
+
     await registrarLog('registrou venda', 'vendas', item+' — '+fR(vf)+' para '+(document.getElementById('vd_cliente').value||'—'));
     fecharModal();
     navLVendas();
@@ -3684,7 +4002,19 @@ function abrirRegistrarSessao(nome){
 
 function abrirNovaVenda(){
   const hoje=new Date(); const dd=String(hoje.getDate()).padStart(2,'0'),mm=String(hoje.getMonth()+1).padStart(2,'0'),yy=hoje.getFullYear();
+  window._vendaCodigoBarras = null;
   abrirModal('<div class="mdt">Nova venda</div>'+
+
+  // Campo código de barras
+  '<label class="fl">Código de barras (bipe ou digite)</label>'+
+  '<div class="barcode-box" id="vd_barcode_box">'+
+  '<i class="ti ti-barcode" style="color:var(--gold-dark)"></i>'+
+  '<input type="text" id="vd_codigo_barras" placeholder="Bipe a peça ou digite o código…" '+
+  'onfocus="ativarBipVenda()" onblur="desativarLeitorCodigoBarras()" '+
+  'onkeydown="if(event.key===\'Enter\'){event.preventDefault();buscarPecaPorCodigo(this.value)}">'+
+  '</div>'+
+  '<div id="vd_codigo_result" style="margin-bottom:10px"></div>'+
+
   '<label class="fl">Item *</label><input class="fi" id="vd_item" placeholder="Ex: Macaquinho Honey Rosa Blush">'+
   '<div class="fr2"><div><label class="fl">Marca</label><select class="fi" id="vd_marca"><option>Rosa Imperial</option><option>Camomila</option><option>Mnovo</option><option>Mantig</option><option>ALAD Amanda</option><option>Lm</option></select></div>'+
   '<div><label class="fl">Tamanho</label><input class="fi" id="vd_tam" placeholder="P / M / G"></div></div>'+
