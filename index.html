@@ -2495,30 +2495,133 @@ function verAlunoIdx(i){
 
 function verAlunoDetalhe(a){
   const isPausado = a.s==='PA';
-  set('<div class="tb"><button class="btn" onclick="navPAlunos()"><i class="ti ti-arrow-left"></i> Voltar</button></div>'+
-  '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'+
-  '<div class="av '+avcls(a.id||0)+'" style="width:40px;height:40px;font-size:14px">'+ini(a.n)+'</div>'+
-  '<div><div style="font-size:15px;font-weight:500;color:var(--brown)">'+a.n+'</div>'+
-  '<div style="font-size:12px;color:var(--brown-light)">'+(a.tel||'Telefone não informado')+'</div></div>'+
-  '<span style="margin-left:auto">'+sbadge(a.s)+'</span></div>'+
+  set(
+    '<div class="tb">'+
+    '<button class="btn" onclick="navPAlunos()"><i class="ti ti-arrow-left"></i> Voltar</button>'+
+    '<button class="btn" style="margin-left:auto" onclick="abrirEditarAluno()"><i class="ti ti-pencil"></i> Editar cadastro</button>'+
+    '</div>'+
 
-  (isPausado?'<div style="background:rgba(184,146,74,.1);border:1px solid rgba(184,146,74,.3);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--brown-light)">'+
-  '<i class="ti ti-pause-circle" style="margin-right:6px;color:var(--gold-dark)"></i>Aluno pausado — não aparece nos financeiros nem na grade.</div>':'')+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'+
+    '<div class="av '+avcls(a.id||0)+'" style="width:40px;height:40px;font-size:14px">'+ini(a.n)+'</div>'+
+    '<div><div style="font-size:15px;font-weight:500;color:var(--text-1)">'+a.n+'</div>'+
+    '<div style="font-size:12px;color:var(--text-2)">'+(a.tel||'Telefone não informado')+'</div></div>'+
+    '<span style="margin-left:auto">'+sbadge(a.s)+'</span></div>'+
 
-  '<div class="dp"><h3>Dados</h3>'+
-  dr('Plano',a.pl||'—')+dr('Horário(s)',a.h||'—')+dr('Valor','R$ '+(a.v||0))+
-  dr('Último pagto',a.pg||'—')+dr('Próx. vencimento',a.px||'—')+'</div>'+
+    (isPausado?'<div style="background:rgba(201,169,110,.1);border:1px solid rgba(201,169,110,.3);border-radius:var(--r-md);padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--text-2)">'+
+    '<i class="ti ti-pause-circle" style="margin-right:6px;color:var(--gold)"></i>Aluno pausado — não aparece nos financeiros nem na grade.</div>':'')+
 
-  '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-  (a.s==='A'?'<button class="btn btnb" onclick="abrirPagPilates(\''+esc(a.n)+'\','+(a.v||0)+')"><i class="ti ti-cash"></i> Registrar pagamento</button>':'')+
-  (a.s==='A'?'<button class="btn" onclick="abrirTroca(\''+esc(a.n)+'\',\''+esc(a.h||'')+'\')"><i class="ti ti-arrows-exchange"></i> Troca de aula</button>':'')+
-  (a.s==='E'?'<button class="btn btnb" onclick="converterAtivoObj()"><i class="ti ti-user-check"></i> Converter para ativo</button>':'')+
-  (a.s==='P'?'<button class="btn btnb" onclick="alert(\'Agendar experimental!\')"><i class="ti ti-calendar-plus"></i> Agendar experimental</button>':'')+
-  (a.s==='A'?'<button class="btn" style="color:var(--gold-dark);border-color:rgba(184,146,74,.4)" onclick="pausarAluno()"><i class="ti ti-pause-circle"></i> Pausar aluno</button>':'')+
-  '<button class="btn" style="color:#8B2E1A;border-color:rgba(139,46,26,.3)" onclick="excluirAluno()"><i class="ti ti-trash"></i> Excluir cadastro</button>'+
-  (isPausado?'<button class="btn btnb" onclick="reativarAluno()"><i class="ti ti-player-play"></i> Reativar aluno</button>':'')+
-  '</div>');
+    '<div class="dp"><h3>Dados</h3>'+
+    dr('Plano',a.pl||'—')+
+    dr('Horário(s)',a.h||'—')+
+    dr('Valor mensal','R$ '+(a.v||0))+
+    dr('Último pagto',a.pg||'—')+
+    dr('Próx. vencimento',a.px&&a.px!=='parceria'?
+      '<span style="color:'+(vencido(a.px)?'#C0392B':proxVencer(a.px)?'#E67E22':'#2D7A3A')+'">'+a.px+'</span>'
+      :(a.px||'—'))+
+    '</div>'+
+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+    (a.s==='A'?'<button class="btn btnb" onclick="abrirPagPilates(\''+esc(a.n)+'\','+(a.v||0)+')"><i class="ti ti-cash"></i> Registrar pagamento</button>':'')+
+    (a.s==='A'?'<button class="btn" onclick="abrirTroca(\''+esc(a.n)+'\',\''+esc(a.h||'')+'\')"><i class="ti ti-arrows-exchange"></i> Troca de aula</button>':'')+
+    (a.s==='E'?'<button class="btn btnb" onclick="converterAtivoObj()"><i class="ti ti-user-check"></i> Converter para ativo</button>':'')+
+    (a.s==='P'?'<button class="btn btnb" onclick="alert(\'Agendar experimental!\')"><i class="ti ti-calendar-plus"></i> Agendar experimental</button>':'')+
+    (a.s==='A'?'<button class="btn" onclick="pausarAluno()"><i class="ti ti-pause-circle"></i> Pausar aluno</button>':'')+
+    (isPausado?'<button class="btn btnb" onclick="reativarAluno()"><i class="ti ti-player-play"></i> Reativar aluno</button>':'')+
+    '<button class="btn" style="color:#C0392B;border-color:rgba(192,57,43,.3)" onclick="excluirAluno()"><i class="ti ti-trash"></i> Excluir</button>'+
+    '</div>'
+  );
   window._alunoAtual = a;
+}
+
+// Helpers vencimento
+function vencido(px){
+  if(!px||px==='parceria') return false;
+  const p=px.split('/'); if(p.length<3) return false;
+  const d=new Date('20'+p[2]+'-'+p[1]+'-'+p[0]); d.setHours(23,59,59);
+  return d < new Date();
+}
+function proxVencer(px){
+  if(!px||px==='parceria') return false;
+  const p=px.split('/'); if(p.length<3) return false;
+  const d=new Date('20'+p[2]+'-'+p[1]+'-'+p[0]);
+  const diff=(d-new Date())/(1000*60*60*24);
+  return diff>=0 && diff<=5;
+}
+
+// ── EDITAR ALUNO ──────────────────────────────────────────
+function abrirEditarAluno(){
+  const a = window._alunoAtual;
+  if(!a) return;
+  abrirModal(
+    '<div class="mdt"><i class="ti ti-pencil" style="margin-right:8px;color:var(--gold)"></i>Editar cadastro</div>'+
+    '<label class="fl">Nome *</label><input class="fi" id="ea_nome" value="'+esc(a.n||'')+'">'+
+    '<label class="fl">Telefone</label><input class="fi" id="ea_tel" value="'+esc(a.tel||'')+'">'+
+    '<div class="fr2">'+
+    '<div><label class="fl">Status</label><select class="fi" id="ea_status">'+
+      ['A','E','P','AV','PA'].map(s=>'<option value="'+s+'"'+(a.s===s?' selected':'')+'>'+
+        ({A:'Ativo',E:'Experimental',P:'Prospect',AV:'Avulso',PA:'Pausado'}[s]||s)+'</option>').join('')+
+    '</select></div>'+
+    '<div><label class="fl">Valor R$</label><input class="fi" id="ea_val" type="number" value="'+(a.v||'')+'"></div>'+
+    '</div>'+
+    '<label class="fl">Plano</label><select class="fi" id="ea_plano">'+
+      ['Mensal 1x','Mensal 2x','Mensal 3x','Semestral 1x','Semestral 2x','Semestral 3x','Anual 1x','Anual 2x','Anual 3x','Avulso','Parceria'].map(p=>
+        '<option'+(a.pl===p?' selected':'')+'>'+p+'</option>').join('')+
+    '</select>'+
+    '<label class="fl">Horário(s)</label><input class="fi" id="ea_h" value="'+esc(a.h||'')+'">'+
+    '<div class="fr2">'+
+    '<div><label class="fl">Último pagto</label><input class="fi" id="ea_pg" value="'+esc(a.pg||'')+'" placeholder="dd/mm/aa"></div>'+
+    '<div><label class="fl">Próx. vencimento</label><input class="fi" id="ea_px" value="'+esc(a.px||'')+'" placeholder="dd/mm/aa"></div>'+
+    '</div>'+
+    '<div class="mdf">'+
+    '<button class="btn" onclick="fecharModal()">Cancelar</button>'+
+    '<button class="btn btnp" id="ea_btn" onclick="salvarEdicaoAluno()"><i class="ti ti-check"></i> Salvar</button>'+
+    '</div>'
+  );
+}
+
+async function salvarEdicaoAluno(){
+  const a   = window._alunoAtual;
+  if(!a) return;
+  const btn = document.getElementById('ea_btn');
+  btn.disabled=true; btn.textContent='Salvando…';
+
+  const dados = {
+    nome:          document.getElementById('ea_nome').value.trim(),
+    telefone:      document.getElementById('ea_tel').value.trim()||null,
+    status:        document.getElementById('ea_status').value,
+    valor:         parseFloat(document.getElementById('ea_val').value)||0,
+    plano:         document.getElementById('ea_plano').value,
+    horario:       document.getElementById('ea_h').value.trim()||null,
+    ultimo_pagto:  document.getElementById('ea_pg').value.trim()||null,
+    prox_vencto:   document.getElementById('ea_px').value.trim()||null,
+  };
+
+  try {
+    // Garante no banco e atualiza
+    await garantirAlunoBanco(a);
+    const r = await fetchWithTimeout(
+      `${SB_URL}/rest/v1/alunos?nome=eq.${encodeURIComponent(a.n)}&limit=1`,
+      { headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY} }
+    );
+    const lista = await r.json();
+    if(lista[0]) await sbUpdate('alunos', lista[0].id, dados);
+
+    // Atualiza cache local
+    Object.assign(a, {
+      n:a.n, tel:dados.telefone, s:dados.status,
+      v:dados.valor, pl:dados.plano, h:dados.horario,
+      pg:dados.ultimo_pagto, px:dados.prox_vencto
+    });
+    // Atualiza nome se mudou
+    if(dados.nome !== a.n){
+      a.n = dados.nome;
+    }
+    atualizarCacheAluno(a.n, a);
+
+    await registrarLog('editou aluno','alunos', dados.nome);
+    fecharModal();
+    verAlunoDetalhe(a);
+  } catch(e){ btn.disabled=false; btn.textContent='Salvar'; alert('Erro: '+e.message); }
 }
 
 async function pausarAluno(){
@@ -2901,27 +3004,38 @@ function renderFPacientes(dados){
 }
 
 function navFAltas(){
-  const todas = window._fisioCache||FISIO;
-  const altas = todas.filter(p=>p.status==='alta');
-  const total = todas.filter(p=>p.status!=='alta').length;
+  const todas  = window._fisioCache||FISIO;
+  const altas  = todas.filter(p=>p.status==='alta'||p.s==='alta');
+  const ativos = todas.filter(p=>p.status!=='alta'&&p.s!=='alta').length;
+
   set(
-    '<div class="pt">Pacientes com Alta</div>'+
-    '<div class="ps">'+altas.length+' pacientes que concluíram o tratamento</div>'+
+    '<div class="pt">Pacientes</div>'+
+    '<div class="ps">'+altas.length+' com alta · '+ativos+' em tratamento</div>'+
     '<div class="tabs">'+
-    '<button class="tab" onclick="navFPacientes()">Em tratamento ('+total+')</button>'+
-    '<button class="tab act acte" onclick="navFAltas()">Com alta ('+altas.length+')</button>'+
+    '<button class="tab" onclick="navFPacientes()">Em tratamento ('+ativos+')</button>'+
+    '<button class="tab actb act" onclick="navFAltas()">Com alta ('+altas.length+')</button>'+
     '</div>'+
-    '<div class="tw"><table><thead><tr>'+
-    '<th>Paciente</th><th>Sessões contratadas</th><th>Sessões realizadas</th><th>Status</th>'+
-    '</tr></thead><tbody>'+
-    (altas.length?altas.map(p=>'<tr>'+
-      '<td><strong>'+p.n+'</strong></td>'+
-      '<td style="color:var(--brown-light)">'+(p.sessoes||'—')+'</td>'+
-      '<td>'+p.realizadas+'</td>'+
-      '<td><span class="bdg bg">Alta</span></td>'+
-      '</tr>').join(''):
-      '<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--brown-light)">Nenhum paciente com alta</td></tr>')+
-    '</tbody></table></div>'
+    (altas.length?
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">'+
+    altas.map(p=>{
+      const pct = p.sessoes ? Math.min(100,Math.round((p.realizadas||0)/p.sessoes*100)) : null;
+      return '<div style="background:var(--white);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;box-shadow:var(--shadow-xs)">'+
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'+
+      '<div style="width:36px;height:36px;border-radius:50%;background:var(--bg-2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text-2)">'+
+      p.n.split(' ').filter(Boolean).slice(0,2).map(w=>w[0]?.toUpperCase()||'').join('')+'</div>'+
+      '<div><div style="font-size:13px;font-weight:600;color:var(--text-1)">'+p.n+'</div><span class="bdg bg">Alta</span></div>'+
+      '</div>'+
+      '<div style="font-size:12px;color:var(--text-2);margin-bottom:6px">'+
+      (p.sessoes?(p.realizadas||0)+' / '+p.sessoes+' sessões':(p.realizadas||0)+' sessões')+
+      '</div>'+
+      (pct!=null?'<div class="chart-bar"><div class="chart-fill-e" style="width:'+pct+'%"></div></div>':'')+
+      '</div>';
+    }).join('')+'</div>'
+    :
+    '<div style="text-align:center;padding:48px 0;color:var(--text-3)">'+
+    '<i class="ti ti-user-check" style="font-size:40px;opacity:.3;display:block;margin-bottom:10px"></i>'+
+    'Nenhum paciente com alta ainda</div>'
+    )
   );
 }
 
@@ -2930,28 +3044,49 @@ function verPaciente(idx){
   const p = cache[idx];
   if(!p) return;
   window._pacienteAtual = p;
-  const ok=p.sessoes&&p.realizadas>=p.sessoes;
-  const faltam=p.sessoes?Math.max(0,p.sessoes-p.realizadas):null;
+  const ok     = p.sessoes && p.realizadas >= p.sessoes;
+  const faltam = p.sessoes ? Math.max(0, p.sessoes - p.realizadas) : null;
+  const pct    = p.sessoes ? Math.min(100, Math.round(p.realizadas/p.sessoes*100)) : null;
+
   set(
-    '<div class="tb"><button class="btn" onclick="navFPacientes()"><i class="ti ti-arrow-left"></i> Voltar</button></div>'+
-    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'+
-    '<div style="width:44px;height:44px;border-radius:50%;background:rgba(74,107,46,.15);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;color:#3D5C3A">'+
+    '<div class="tb">'+
+    '<button class="btn" onclick="navFPacientes()"><i class="ti ti-arrow-left"></i> Voltar</button>'+
+    '</div>'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">'+
+    '<div style="width:44px;height:44px;border-radius:50%;background:var(--green-light);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:var(--green)">'+
     p.n.split(' ').filter(Boolean).slice(0,2).map(w=>w[0]?.toUpperCase()||'').join('')+'</div>'+
-    '<div><div style="font-size:15px;font-weight:500;color:var(--brown)">'+p.n+'</div></div>'+
-    '<span style="margin-left:auto"><span class="bdg '+(ok?'bg':p.realizadas>0?'ba':'bx')+'">'+(ok?'Concluído':p.realizadas>0?'Em andamento':'Aguardando')+'</span></span>'+
+    '<div><div style="font-size:16px;font-weight:600;color:var(--text-1)">'+p.n+'</div>'+
+    (p.tel?'<div style="font-size:12px;color:var(--text-2)">'+p.tel+'</div>':'')+
     '</div>'+
-    '<div class="dp"><h3>Sessões</h3>'+
-    dr('Sessões contratadas',p.sessoes||'Sem contrato fixo')+
-    dr('Sessões realizadas',p.realizadas)+
-    (faltam!=null?dr('Faltam',faltam+' sessão(ões)'):'')+
+    '<span style="margin-left:auto"><span class="bdg '+(ok?'bg':p.realizadas>0?'ba':'bx')+'">'+( ok?'Concluído':p.realizadas>0?'Em andamento':'Aguardando')+'</span></span>'+
     '</div>'+
-    (p.datas&&p.datas.length?'<div class="dp"><h3>Datas realizadas</h3>'+
-    '<div style="display:flex;flex-wrap:wrap;gap:4px;padding:4px 0">'+
-    p.datas.map(d=>'<span style="background:rgba(74,107,46,.1);color:#3D5C3A;padding:3px 8px;border-radius:6px;font-size:11px">'+(d||'—')+'</span>').join('')+
-    '</div></div>':'')+
+
+    (pct!=null?
+    '<div style="margin-bottom:16px">'+
+    '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-2);margin-bottom:6px">'+
+    '<span>Progresso</span><span style="font-weight:600;color:var(--text-1)">'+p.realizadas+' / '+p.sessoes+' sessões ('+pct+'%)</span></div>'+
+    '<div class="chart-bar" style="height:10px"><div class="chart-fill-e" style="width:'+pct+'%"></div></div>'+
+    (faltam!=null&&faltam>0?'<div style="font-size:11px;color:var(--text-3);margin-top:4px">Faltam '+faltam+' sessão(ões)</div>':
+    ok?'<div style="font-size:11px;color:#2D7A3A;margin-top:4px;font-weight:600">✓ Tratamento completo!</div>':'')+
+    '</div>':'')+
+
+    '<div class="dp"><h3>Histórico de sessões</h3>'+
+    (p.datas&&p.datas.length?
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;margin-top:4px">'+
+      p.datas.map((d,i)=>
+        '<div style="background:var(--green-light);border:1px solid rgba(45,122,58,.2);border-radius:var(--r-sm);padding:7px 10px;text-align:center">'+
+        '<div style="font-size:10px;color:var(--green);font-weight:700;text-transform:uppercase;letter-spacing:.04em">Sessão '+(i+1)+'</div>'+
+        '<div style="font-size:12px;color:var(--text-1);font-weight:500;margin-top:2px">'+(d||'—')+'</div>'+
+        '</div>'
+      ).join('')+'</div>'
+    :
+      '<div style="padding:12px 0;color:var(--text-3);font-size:13px;text-align:center">Nenhuma sessão registrada ainda</div>'
+    )+
+    '</div>'+
+
     '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
     '<button class="btn btne" onclick="abrirRegistrarSessao(\''+esc(p.n)+'\')"><i class="ti ti-plus"></i> Registrar sessão</button>'+
-    '<button class="btn" style="color:#8B2E1A;border-color:rgba(139,46,26,.3)" onclick="darAlta()"><i class="ti ti-user-check"></i> Dar alta</button>'+
+    '<button class="btn btnp" onclick="darAlta()"><i class="ti ti-user-check"></i> Dar alta</button>'+
     '</div>'
   );
 }
@@ -2959,15 +3094,14 @@ function verPaciente(idx){
 async function darAlta(){
   const p = window._pacienteAtual;
   if(!p) return;
-  if(!confirm('Dar alta para '+p.n+'? O paciente será movido para o relatório de altas.')) return;
+  if(!confirm('Dar alta para '+p.n+'?\n\nO paciente sairá do dashboard e ficará na aba "Com alta".')) return;
   try {
     if(p.id) await sbUpdate('pacientes_fisio', p.id, {status:'alta'});
-    // Atualiza cache
     if(window._fisioCache){
       const i = window._fisioCache.findIndex(x=>x.n===p.n);
-      if(i>=0) window._fisioCache[i].status='alta';
+      if(i>=0){ window._fisioCache[i].status='alta'; window._fisioCache[i].s='alta'; }
     }
-    await registrarLog('deu alta', 'pacientes_fisio', 'Alta: '+p.n);
+    await registrarLog('deu alta','pacientes_fisio','Alta: '+p.n+' ('+p.realizadas+' sessões)');
     navFPacientes();
   } catch(e){ alert('Erro: '+e.message); }
 }
@@ -3250,10 +3384,24 @@ async function navLEstoque(){
   renderLEstoque(ESTOQUE);
   try {
     const rows = await sbGet('estoque','item');
-    const dbItems = new Set(rows.map(r=>r.item));
-    const all = rows.length > 0 ? [...rows.map(r=>({id:r.id,item:r.item,tam:r.tamanho,qtd:r.quantidade})), ...ESTOQUE.filter(e=>!dbItems.has(e.item))] : ESTOQUE;
-    window._estoqueCache = all;
-    renderLEstoque(all);
+    if(rows.length > 0){
+      const all = rows.map(r=>({
+        id:           r.id,
+        item:         r.item,
+        tam:          r.tamanho||'—',
+        qtd:          r.quantidade||0,
+        marca:        r.marca||null,
+        custo:        r.custo||null,
+        preco:        r.preco||null,
+        codigo_barras:r.codigo_barras||null
+      }));
+      window._estoqueCache = all;
+      renderLEstoque(all);
+    } else {
+      // banco vazio — mostra ESTOQUE local (array vazio)
+      window._estoqueCache = [];
+      renderLEstoque([]);
+    }
   } catch(e){ console.warn('Supabase estoque:', e.message); }
 }
 
@@ -3435,25 +3583,21 @@ async function confirmarPagamento(){
       }
     } catch(e2){ console.warn('Update aluno banco:', e2.message); }
 
-    // 3. Atualiza cache local (AL e _alunosDB)
-    const atualizarCache = (lista)=>{
-      const a = lista.find(x=>x.n===aluno);
-      if(a){
-        a.pg = dataStr;
-        if(novoProx) a.px = novoProx;
-      }
+    // 3. Atualiza cache local em TODOS os lugares
+    const atualizarTodosCache = (nome, pg, px) => {
+      [AL, window._alunosDB||[]].forEach(lista=>{
+        const a = lista.find(x=>x.n===nome);
+        if(a){ a.pg=pg; if(px) a.px=px; }
+      });
     };
-    atualizarCache(AL);
-    if(window._alunosDB) atualizarCache(window._alunosDB);
+    atualizarTodosCache(aluno, dataStr, novoProx);
 
     await registrarLog('registrou pagamento','pagamentos', aluno+' — '+fR(valor)+' ref. '+ref+' | próx: '+(novoProx||'—'));
     fecharModal();
 
-    // 4. Recarrega a página atual com dados frescos do banco
-    if(pg==='p_fin')   navPFin();
-    else if(pg==='p_alunos') navPAlunos();
-    else if(pg==='p_dash')   navPDash();
-    else navPFin();
+    // 4. Recarrega sempre o financeiro para refletir o pagamento
+    pg = 'p_fin';
+    navPFin();
 
   } catch(e){ btn.disabled=false; btn.textContent='Confirmar'; alert('Erro: '+e.message); }
 }
