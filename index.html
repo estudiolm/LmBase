@@ -4372,23 +4372,23 @@ async function rFinGeral(){
   '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">'+
 
   // Tabela vencimentos
-  '<div><div style="font-size:11px;font-weight:600;color:#B8924A;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Próximos vencimentos</div>'+
+  '<div><div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Próximos vencimentos</div>'+
   '<div class="tw"><table><thead><tr><th>Aluno</th><th>Plano</th><th>Vence</th><th>Valor</th></tr></thead><tbody>'+
-  [...vMaio,...vJun].sort((a,b)=>{
+  [...vMes,...vProx].sort((a,b)=>{
     const[da,ma]=(a.px||'').split('/').map(Number);
     const[db,mb]=(b.px||'').split('/').map(Number);
     return(ma*100+da)-(mb*100+db);
-  }).slice(0,10).map(a=>'<tr><td>'+a.n.split(' ').slice(0,2).join(' ')+'</td><td style="color:#7A5230">'+a.pl+'</td><td>'+a.px+'</td><td style="color:#B8924A;font-weight:600">R$ '+a.v+'</td></tr>').join('')+
+  }).slice(0,10).map(a=>'<tr><td>'+a.n.split(' ').slice(0,2).join(' ')+'</td><td style="color:var(--text-2)">'+a.pl+'</td><td style="color:'+(vencido(a.px)?'#C0392B':'var(--text-1)')+'">'+a.px+'</td><td style="color:var(--gold-dark);font-weight:600">R$ '+a.v+'</td></tr>').join('')+
   '</tbody></table></div></div>'+
 
   // Receita por plano
-  '<div><div style="font-size:11px;font-weight:600;color:#B8924A;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Receita por plano</div>'+
+  '<div><div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Receita por plano</div>'+
   '<div class="dp" style="padding:12px">'+
   planosTop.map(([pl,{n,rec}])=>
     '<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">'+
-    '<span style="color:#4A2E1A">'+pl+'</span>'+
-    '<span style="color:#7A5230;font-size:11px">'+n+' alunos · <strong style="color:#B8924A">R$ '+rec.toLocaleString('pt-BR')+'</strong></span></div>'+
-    '<div style="height:6px;border-radius:3px;background:#EDE0CC"><div style="width:'+Math.round(rec/recMensal*100)+'%;height:100%;border-radius:3px;background:#B8924A"></div></div></div>'
+    '<span style="color:var(--text-1)">'+pl+'</span>'+
+    '<span style="color:var(--text-2);font-size:11px">'+n+' alunos · <strong style="color:var(--gold-dark)">R$ '+rec.toLocaleString('pt-BR')+'</strong></span></div>'+
+    '<div style="height:6px;border-radius:3px;background:var(--bg-2)"><div style="width:'+Math.round(rec/recMensal*100)+'%;height:100%;border-radius:3px;background:var(--gold)"></div></div></div>'
   ).join('')+'</div></div>'+
   '</div>'+
 
