@@ -2498,7 +2498,6 @@ function verAlunoDetalhe(a){
   set(
     '<div class="tb">'+
     '<button class="btn" onclick="navPAlunos()"><i class="ti ti-arrow-left"></i> Voltar</button>'+
-    '<button class="btn" style="margin-left:auto" onclick="abrirEditarAluno()"><i class="ti ti-pencil"></i> Editar cadastro</button>'+
     '</div>'+
 
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'+
@@ -2527,6 +2526,7 @@ function verAlunoDetalhe(a){
     (a.s==='P'?'<button class="btn btnb" onclick="alert(\'Agendar experimental!\')"><i class="ti ti-calendar-plus"></i> Agendar experimental</button>':'')+
     (a.s==='A'?'<button class="btn" onclick="pausarAluno()"><i class="ti ti-pause-circle"></i> Pausar aluno</button>':'')+
     (isPausado?'<button class="btn btnb" onclick="reativarAluno()"><i class="ti ti-player-play"></i> Reativar aluno</button>':'')+
+    '<button class="btn" onclick="abrirEditarAluno()"><i class="ti ti-pencil"></i> Editar</button>'+
     '<button class="btn" style="color:#C0392B;border-color:rgba(192,57,43,.3)" onclick="excluirAluno()"><i class="ti ti-trash"></i> Excluir</button>'+
     '</div>'
   );
@@ -3408,9 +3408,17 @@ async function navLEstoque(){
 function renderLEstoque(all){
   const total=all.reduce((s,e)=>s+qtdN(e.qtd),0);
   const zeros=all.filter(e=>qtdN(e.qtd)===0).length;
+  const valorVenda = all.reduce((s,e)=>s+(qtdN(e.qtd)*(parseFloat(e.preco)||0)),0);
+  const valorCusto = all.reduce((s,e)=>s+(qtdN(e.qtd)*(parseFloat(e.custo)||0)),0);
+  const lucroEstimado = valorVenda - valorCusto;
   const lista=all.filter(e=>!ft||(e.item||'').toLowerCase().includes(ft.toLowerCase())||(e.marca||'').toLowerCase().includes(ft.toLowerCase()));
   set('<div class="pt">Estoque</div><div class="ps">'+all.length+' modelos · '+total+' unidades · '+zeros+' zeradas</div>'+
   '<div class="metrics3">'+mc('Total em estoque','vi',total,'unidades')+mc('Peças zeradas','vr',zeros,'sem estoque')+mc('Modelos','vg',all.length,'cadastrados')+'</div>'+
+  '<div class="metrics3">'+
+  mc('Valor em estoque (venda)','vg',fR(valorVenda),'se vender tudo')+
+  mc('Valor investido (custo)','va',fR(valorCusto),'capital empatado')+
+  mc('Lucro potencial','vi',fR(lucroEstimado),'venda − custo')+
+  '</div>'+
   '<div class="tb"><input class="srch" placeholder="Buscar peça ou marca…" oninput="ft=this.value;renderLEstoque(window._estoqueCache||[])" value="'+ft+'">'+
   '<div style="margin-left:auto;display:flex;gap:8px">'+
   '<button class="btn" onclick="abrirBipagemEstoque()"><i class="ti ti-barcode"></i> Bipar entrada</button>'+
@@ -3422,7 +3430,7 @@ function renderLEstoque(all){
     return '<div class="prod-card '+cls+'" onclick="abrirEditarPeca(\''+esc(e.item||'')+'\')">'+
     '<div class="pn">'+e.item+'</div>'+
     (e.marca?'<div style="font-size:10px;font-weight:600;color:var(--gold-dark);margin-bottom:2px">'+e.marca+'</div>':'')+
-    '<div class="pm">'+e.tam+'</div>'+
+    '<div class="pm">'+e.tam+(e.preco?' · R$ '+e.preco:'')+'</div>'+
     '<div class="pt2"><span class="bdg '+(q===0?'br':q<=1?'ba':'bg')+'">'+(q===0?'Sem estoque':q+' un.')+'</span></div></div>';
   }).join('')+'</div>');
 }
