@@ -4217,35 +4217,41 @@ async function rFinGeral(){
   '<div style="width:28px;height:28px;border:3px solid var(--border-md);border-top-color:var(--gold);border-radius:50%;animation:spin 0.8s linear infinite"></div>'+
   '<span style="font-size:12px">Consolidando dados…</span></div>');
 
-  // Busca TUDO do banco em paralelo
-  let pagsBanco=[], vendasBanco=[], alunosBanco=[], pacientesBanco=[];
-  try { pagsBanco    = await sbGet('pagamentos','criado_em'); } catch(e){}
-  try { vendasBanco  = await sbGet('vendas','criado_em'); } catch(e){}
-  try { alunosBanco  = await sbGet('alunos','nome'); } catch(e){}
-  try { pacientesBanco = await sbGet('pacientes_fisio','nome'); } catch(e){}
+  // Busca tudo em PARALELO com timeout de 8s cada
+  const safe = (p) => p.catch(()=>null);
+  const [resAlunos, resPags, resVendas, resPacientes] = await Promise.all([
+    safe(fetchWithTimeout(`${SB_URL}/rest/v1/alunos?select=*&limit=500`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}},8000)),
+    safe(fetchWithTimeout(`${SB_URL}/rest/v1/pagamentos?select=*&limit=1000`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}},8000)),
+    safe(fetchWithTimeout(`${SB_URL}/rest/v1/vendas?select=*&limit=1000`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}},8000)),
+    safe(fetchWithTimeout(`${SB_URL}/rest/v1/pacientes_fisio?select=*&limit=200`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}},8000)),
+  ]);
 
-  // ── PILATES — usa banco com fallback local ────────────────
+  // Parseia respostas — fallback para dados em cache/local se falhar
+  const alunosBanco   = resAlunos   ? await resAlunos.json().catch(()=>[])   : [];
+  const pagsBanco     = resPags     ? await resPags.json().catch(()=>[])     : [];
+  const vendasBanco   = resVendas   ? await resVendas.json().catch(()=>[])   : [];
+  const pacientesBanco= resPacientes? await resPacientes.json().catch(()=>[])  : [];
+
+  // ── PILATES — banco com fallback cache/local ──────────────
   const alunosBase = alunosBanco.length > 0
     ? alunosBanco.map(r=>({n:r.nome,s:r.status,v:parseFloat(r.valor)||0,pl:r.plano,h:r.horario,pg:r.ultimo_pagto,px:r.prox_vencto}))
-    : AL;
+    : (window._alunosDB||AL);
 
-  const ativos = alunosBase.filter(a=>a.s==='A'&&a.s!=='PA');
+  const ativos = alunosBase.filter(a=>a.s==='A');
   const recMensal = ativos.reduce((s,a)=>s+(parseFloat(a.v)||0),0);
 
   // Vencimentos por mês atual e próximo
-  const agora     = new Date();
-  const mesAtual  = agora.getMonth()+1;
-  const mesProx   = mesAtual===12?1:mesAtual+1;
+  const agora    = new Date();
+  const mesAtual = agora.getMonth()+1;
+  const mesProx  = mesAtual===12?1:mesAtual+1;
 
   const vMes  = ativos.filter(a=>{if(!a.px||a.px==='parceria')return false;const p=(a.px||'').split('/');return parseInt(p[1])===mesAtual;});
   const vProx = ativos.filter(a=>{if(!a.px||a.px==='parceria')return false;const p=(a.px||'').split('/');return parseInt(p[1])===mesProx;});
   const semData  = ativos.filter(a=>!a.px||a.px==='parceria').length;
   const vencidos = ativos.filter(a=>vencido(a.px));
 
-  // Mês atual e próximo nomes
   const nomeMes = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
-  // Distribuição por plano
   const porPlano={};
   ativos.forEach(a=>{
     const pl=(a.pl||'—').split(' ').slice(0,2).join(' ');
@@ -4254,36 +4260,34 @@ async function rFinGeral(){
   });
   const planosTop=Object.entries(porPlano).sort((a,b)=>b[1].rec-a[1].rec);
 
-  // Pagamentos registrados no banco
   const pagReg   = pagsBanco.length;
   const pagTotal = pagsBanco.reduce((s,p)=>s+(parseFloat(p.valor)||0),0);
 
-  // ── FISIOTERAPIA — usa banco com fallback ─────────────────
+  // ── FISIOTERAPIA ─────────────────────────────────────────
   const fisioBase = pacientesBanco.length > 0
     ? pacientesBanco.map(r=>({n:r.nome,sessoes:r.sessoes_contratadas,realizadas:r.sessoes_realizadas||0,status:r.status}))
-    : FISIO;
+    : (window._fisioCache||FISIO);
 
   const PRECO_SESSAO = 120;
-  const totalSessoes = fisioBase.reduce((s,p)=>s+(p.realizadas||0),0);
-  const recFisio  = totalSessoes * PRECO_SESSAO;
-  const pacAtivos = fisioBase.filter(p=>p.status!=='alta').length;
-  const pacConc   = fisioBase.filter(p=>p.sessoes&&p.realizadas>=p.sessoes).length;
-  const pacAndamento = fisioBase.filter(p=>p.status!=='alta'&&p.realizadas>0&&(!p.sessoes||p.realizadas<p.sessoes)).length;
+  const totalSessoes  = fisioBase.reduce((s,p)=>s+(p.realizadas||0),0);
+  const recFisio      = totalSessoes * PRECO_SESSAO;
+  const pacAtivos     = fisioBase.filter(p=>p.status!=='alta').length;
+  const pacConc       = fisioBase.filter(p=>p.sessoes&&p.realizadas>=p.sessoes).length;
+  const pacAndamento  = fisioBase.filter(p=>p.status!=='alta'&&p.realizadas>0&&(!p.sessoes||p.realizadas<p.sessoes)).length;
 
   // ── LOJA ─────────────────────────────────────────────────
   const todasVendas = vendasBanco.map(r=>({
-    item:r.item, marca:r.marca,
+    item:r.item,marca:r.marca,
     preco:parseFloat(r.preco)||0,
     custo:parseFloat(r.custo)||0,
     data:r.data_venda
   }));
-  const recLoja  = todasVendas.reduce((s,v)=>s+v.preco,0);
+  const recLoja   = todasVendas.reduce((s,v)=>s+v.preco,0);
   const custoLoja = todasVendas.filter(v=>v.custo>0).reduce((s,v)=>s+v.custo,0);
-  const margemLoja = custoLoja>0?((recLoja-custoLoja)/recLoja*100):null;
-  const recEnc   = ENCOMENDAS.filter(e=>e.vf).reduce((s,e)=>s+(parseFloat(e.vf)||0),0);
-  const encPend  = ENCOMENDAS.filter(e=>!e.vf).length;
+  const margemLoja= custoLoja>0?((recLoja-custoLoja)/recLoja*100):null;
+  const recEnc    = ENCOMENDAS.filter(e=>e.vf).reduce((s,e)=>s+(parseFloat(e.vf)||0),0);
+  const encPend   = ENCOMENDAS.filter(e=>!e.vf).length;
 
-  // Por marca
   const porMarca={};
   todasVendas.forEach(v=>{const m=v.marca||'Outras';if(!porMarca[m])porMarca[m]=0;porMarca[m]+=v.preco;});
   const marcasTop=Object.entries(porMarca).sort((a,b)=>b[1]-a[1]).slice(0,5);
