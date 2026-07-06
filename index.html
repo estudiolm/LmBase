@@ -3248,22 +3248,23 @@ function renderLVendas(all){
     '</div></div>'+
 
     '<div class="tw"><table><thead><tr>'+
-    '<th>#</th><th>Item</th><th>Marca</th><th>Cliente</th><th>Data</th><th>Pgto</th><th>Preço</th><th></th>'+
+    '<th>#</th><th>Item</th><th>Marca</th><th>Cliente</th><th>Vendedor</th><th>Data</th><th>Pgto</th><th>Preço</th><th></th>'+
     '</tr></thead><tbody>'+
     lista.map((v,i)=>
       '<tr onclick="abrirEditarVenda('+i+')" style="cursor:pointer">'+
-      '<td style="color:var(--brown-light);font-size:11px">'+( i+1)+'</td>'+
-      '<td style="font-weight:500">'+( v.item||'—')+'</td>'+
+      '<td style="color:var(--text-3);font-size:11px">'+(i+1)+'</td>'+
+      '<td style="font-weight:500">'+(v.item||'—')+'</td>'+
       '<td>'+(v.marca&&v.marca!=='null'?'<span class="bdg '+marcaBdg(v.marca)+'">'+v.marca+'</span>':'—')+'</td>'+
       '<td>'+(v.cliente&&v.cliente!=='null'?v.cliente:'—')+'</td>'+
-      '<td style="color:var(--brown-light)">'+(normData(v.data)||'—')+'</td>'+
-      '<td style="color:var(--brown-light)">'+(v.pgto&&v.pgto!=='null'?v.pgto:'—')+'</td>'+
-      '<td style="color:var(--brown-mid);font-weight:600">'+fR(v.preco)+'</td>'+
+      '<td>'+(v.vendedor&&v.vendedor!=='null'?'<span class="bdg bb">'+v.vendedor+'</span>':'—')+'</td>'+
+      '<td style="color:var(--text-2)">'+(normData(v.data)||'—')+'</td>'+
+      '<td style="color:var(--text-2)">'+(v.pgto&&v.pgto!=='null'?v.pgto:'—')+'</td>'+
+      '<td style="color:var(--gold-dark);font-weight:600">'+fR(v.preco)+'</td>'+
       '<td><button class="btn btns" onclick="event.stopPropagation();abrirEditarVenda('+i+')"><i class="ti ti-pencil"></i></button></td>'+
       '</tr>'
     ).join('')+
-    '<tr class="sum-row"><td colspan="6" style="text-align:right;padding:8px 15px">Total filtrado</td>'+
-    '<td style="padding:8px 15px;color:var(--brown-mid)">'+fR(tot)+'</td><td></td></tr>'+
+    '<tr class="sum-row"><td colspan="7" style="text-align:right;padding:8px 15px">Total filtrado</td>'+
+    '<td style="padding:8px 15px;color:var(--gold-dark)">'+fR(tot)+'</td><td></td></tr>'+
     '</tbody></table></div>'
   );
 }
@@ -3310,9 +3311,13 @@ function abrirEditarVenda(idx){
     '<div><label class="fl">Desconto %</label><input class="fi" id="vd_desc" type="number" value="0"></div></div>'+
     '<div class="fr2"><div><label class="fl">Cliente</label><input class="fi" id="vd_cliente" value="'+esc(v.cliente&&v.cliente!=='null'?v.cliente:'')+'"></div>'+
     '<div><label class="fl">Data (dd/mm/aa)</label><input class="fi" id="vd_data" value="'+normData(v.data)+'"></div></div>'+
-    '<label class="fl">Forma pgto</label><select class="fi" id="vd_pgto">'+
+    '<div class="fr2"><div><label class="fl">Forma pgto</label><select class="fi" id="vd_pgto">'+
       ['PIX','Cartão débito','Cartão crédito 2x','Dinheiro','Link de pgto'].map(p=>'<option'+(v.pgto===p?' selected':'')+'>'+p+'</option>').join('')+
-    '</select>'+
+    '</select></div>'+
+    '<div><label class="fl">Vendedor(a)</label><select class="fi" id="vd_vendedor">'+
+      '<option value="">— Selecione —</option>'+
+      ['Vitoria','Larissa','Outro'].map(vd=>'<option value="'+vd+'"'+(v.vendedor===vd?' selected':'')+'>'+vd+'</option>').join('')+
+    '</select></div></div>'+
     '<div style="border-top:1px solid var(--border);margin:8px 0 12px;padding-top:12px">'+
     '<div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Adicionar item à mesma venda</div>'+
     '<div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end">'+
@@ -3361,6 +3366,7 @@ async function salvarEdicaoVenda(){
     cliente:   document.getElementById('vd_cliente').value||null,
     data_venda:document.getElementById('vd_data').value||null,
     forma_pgto:document.getElementById('vd_pgto').value||null,
+    vendedor:  document.getElementById('vd_vendedor')?.value||null,
   };
 
   try {
@@ -3649,6 +3655,7 @@ async function confirmarVenda(){
       data_venda:document.getElementById('vd_data').value||null,
       forma_pgto:document.getElementById('vd_pgto').value||null,
       codigo_barras:window._vendaCodigoBarras||null,
+      vendedor:document.getElementById('vd_vendedor')?.value||null,
     });
 
     // Dá baixa automática no estoque se tiver código de barras
@@ -3754,7 +3761,7 @@ function abrirNovaVenda(){
   // Campo código de barras
   '<label class="fl">Código de barras (bipe ou digite)</label>'+
   '<div class="barcode-box" id="vd_barcode_box">'+
-  '<i class="ti ti-barcode" style="color:var(--gold-dark)"></i>'+
+  '<i class="ti ti-barcode" style="color:var(--gold)"></i>'+
   '<input type="text" id="vd_codigo_barras" placeholder="Bipe a peça ou digite o código…" '+
   'onfocus="ativarBipVenda()" onblur="desativarLeitorCodigoBarras()" '+
   'onkeydown="if(event.key===\'Enter\'){event.preventDefault();buscarPecaPorCodigo(this.value)}">'+
@@ -3769,7 +3776,13 @@ function abrirNovaVenda(){
   '<div><label class="fl">Desconto %</label><input class="fi" id="vd_desc" type="number" placeholder="0"></div></div>'+
   '<div class="fr2"><div><label class="fl">Cliente</label><input class="fi" id="vd_cliente" placeholder="Nome"></div>'+
   '<div><label class="fl">Data</label><input class="fi" id="vd_data" type="date" value="'+yy+'-'+mm+'-'+dd+'"></div></div>'+
-  '<label class="fl">Forma pgto</label><select class="fi" id="vd_pgto"><option>PIX</option><option>Cartão débito</option><option>Cartão crédito 2x</option><option>Dinheiro</option><option>Link de pgto</option></select>'+
+  '<div class="fr2"><div><label class="fl">Forma pgto</label><select class="fi" id="vd_pgto"><option>PIX</option><option>Cartão débito</option><option>Cartão crédito 2x</option><option>Dinheiro</option><option>Link de pgto</option></select></div>'+
+  '<div><label class="fl">Vendedor(a)</label><select class="fi" id="vd_vendedor">'+
+    '<option value="">— Selecione —</option>'+
+    '<option value="Vitoria">Vitória</option>'+
+    '<option value="Larissa">Larissa</option>'+
+    '<option value="Outro">Outro</option>'+
+  '</select></div></div>'+
   '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btnp" id="vd_btn" onclick="confirmarVenda()">Registrar venda</button></div>');
 }
 
@@ -4408,9 +4421,81 @@ async function rFinGeral(){
   ativos.filter(a=>!a.px||a.px==='parceria').map(a=>'<tr><td>'+ncell(a)+'</td><td>'+a.pl+'</td><td style="color:#7A5230">'+(a.h||'—')+'</td><td style="color:#B8924A;font-weight:600">R$ '+a.v+'</td></tr>').join('')+
   '</tbody></table></div>':'')+
 
+  // ── COMISSÃO VITÓRIA ─────────────────────────────────────
+  blocoComissaoVitoria(todasVendas)+
+
   // ── CONSOLIDADO MENSAL ─────────────────────────────────────
   blocoMensalConsolidado(pagsBanco, todasVendas)
   );
+}
+
+function blocoComissaoVitoria(todasVendas){
+  // Vendas por mês
+  const agora = new Date();
+  const nomesMes = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+  // Agrupa por mês
+  const porMes = {};
+  todasVendas.forEach(v=>{
+    if(!v.data) return;
+    const s = String(v.data);
+    let mes, ano;
+    if(s.match(/^\d{4}-\d{2}/)){
+      const [y,m] = s.split('-');
+      mes=parseInt(m); ano=parseInt(y);
+    } else {
+      const p = s.split('/');
+      if(p.length<3) return;
+      mes=parseInt(p[1]); ano=parseInt('20'+p[2]);
+    }
+    const key = String(mes).padStart(2,'0')+'/'+ano;
+    if(!porMes[key]) porMes[key]={ total:0, vitoria:0, qtdTotal:0, qtdVitoria:0, vendas:[] };
+    porMes[key].total += parseFloat(v.preco)||0;
+    porMes[key].qtdTotal++;
+    if(v.vendedor==='Vitoria'){
+      porMes[key].vitoria += parseFloat(v.preco)||0;
+      porMes[key].qtdVitoria++;
+    }
+    porMes[key].vendas.push(v);
+  });
+
+  const meses = Object.entries(porMes).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,6);
+  if(!meses.length) return '';
+
+  const mesAtualKey = String(agora.getMonth()+1).padStart(2,'0')+'/'+agora.getFullYear();
+
+  return '<div style="font-size:11px;font-weight:700;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.08em;margin:20px 0 10px">'+
+  '<i class="ti ti-percentage"></i> Comissão — Vitória</div>'+
+  '<div class="tw"><table><thead><tr>'+
+  '<th>Mês</th><th>Total loja</th><th>Vendas Vitória</th><th>% participação</th><th>Comissão (%)</th><th>Valor a pagar</th>'+
+  '</tr></thead><tbody>'+
+  meses.map(([key,d])=>{
+    const [mm,yyyy] = key.split('/');
+    const isAtual = key===mesAtualKey;
+    const pct = d.total>0 ? (d.vitoria/d.total*100) : 0;
+    const comPct = pct>=50 ? 5 : 3; // regra: >=50% → 5%, <50% → 3%
+    const comValor = d.vitoria * (comPct/100);
+    const pctLabel = pct.toFixed(1)+'%';
+    const pctColor = pct>=50 ? '#2D7A3A' : 'var(--gold-dark)';
+    return '<tr style="'+(isAtual?'background:rgba(201,169,110,.05)':'')+'">'+
+    '<td style="font-weight:'+(isAtual?700:400)+'">'+nomesMes[parseInt(mm)]+' '+yyyy+
+      (isAtual?' <span style="font-size:10px;color:var(--gold-dark)">● atual</span>':'')+
+    '</td>'+
+    '<td>'+fR(d.total)+'<span style="font-size:10px;color:var(--text-3);margin-left:4px">'+d.qtdTotal+' vendas</span></td>'+
+    '<td style="font-weight:500">'+fR(d.vitoria)+'<span style="font-size:10px;color:var(--text-3);margin-left:4px">'+d.qtdVitoria+' vendas</span></td>'+
+    '<td><span style="font-weight:700;color:'+pctColor+'">'+pctLabel+'</span>'+
+      '<div style="height:4px;border-radius:2px;background:var(--bg-2);margin-top:3px;width:80px">'+
+      '<div style="width:'+Math.min(pct,100)+'%;height:100%;border-radius:2px;background:'+pctColor+'"></div></div></td>'+
+    '<td><span class="bdg '+(comPct===5?'bg':'ba')+'">'+comPct+'%</span></td>'+
+    '<td style="font-weight:700;color:'+(comValor>0?'#2D7A3A':'var(--text-3)')+'">'+fR(comValor)+
+      (isAtual?'<span style="font-size:10px;color:var(--text-3);display:block">parcial</span>':'')+
+    '</td>'+
+    '</tr>';
+  }).join('')+
+  '</tbody></table>'+
+  '<div style="padding:10px 16px;font-size:12px;color:var(--text-3);border-top:1px solid var(--border)">'+
+  '<i class="ti ti-info-circle"></i> Regra: participação ≥ 50% das vendas do mês → 5% de comissão · participação < 50% → 3%'+
+  '</div></div>';
 }
 
 function blocoMensalConsolidado(pagamentos, vendas){
