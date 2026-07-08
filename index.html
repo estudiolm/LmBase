@@ -671,6 +671,9 @@ select.fi { cursor:pointer; }
     </div>
   </div>
 
+  <!-- Ponto — aparece primeiro para recepção -->
+  <button class="ni" id="btnPontoTop" onclick="nav('ponto')"><i class="ti ti-fingerprint"></i>Controle de Ponto</button>
+
   <div class="nsep">pilates</div>
   <button class="ni pilates" onclick="nav('p_dash')"><i class="ti ti-layout-dashboard"></i>Dashboard</button>
   <button class="ni pilates" onclick="nav('p_alunos')"><i class="ti ti-users"></i>Alunos</button>
@@ -936,9 +939,21 @@ function aplicarPermissoes(){
   const finGeralBtn = document.getElementById('btnFinGeral');
   const sepRel = document.getElementById('sepRelatorios');
   const logsBtn = document.getElementById('btnLogs');
+  const pontoTop = document.getElementById('btnPontoTop');
+  const pontoRel = document.getElementById('btnPonto');
   if(finGeralBtn) finGeralBtn.style.display = perm.verFinGeral ? '' : 'none';
   if(logsBtn) logsBtn.style.display = perm.verFinGeral ? '' : 'none';
   if(sepRel) sepRel.style.display = perm.verFinGeral ? '' : 'none';
+  // Ponto: topo para recepção, rodapé relatórios para admin
+  if(perm.verFinGeral){
+    // Admin — ponto fica na seção relatórios, não no topo
+    if(pontoTop) pontoTop.style.display = 'none';
+    if(pontoRel) pontoRel.style.display = '';
+  } else {
+    // Recepção — ponto fica no TOPO, esconde o do rodapé
+    if(pontoTop) pontoTop.style.display = '';
+    if(pontoRel) pontoRel.style.display = 'none';
+  }
 }
 
 function checarPermissao(pagina){
