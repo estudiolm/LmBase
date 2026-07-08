@@ -691,6 +691,7 @@ select.fi { cursor:pointer; }
   <div class="nsep" id="sepRelatorios">relatórios</div>
   <button class="ni" id="btnFinGeral" onclick="nav('fin_geral')"><i class="ti ti-cash"></i>Financeiro Geral</button>
   <button class="ni" id="btnLogs" onclick="nav('logs')"><i class="ti ti-history"></i>Histórico</button>
+  <button class="ni" id="btnPonto" onclick="nav('ponto')"><i class="ti ti-fingerprint"></i>Controle de Ponto</button>
 
   <div class="nsep">google agenda</div>
   <div id="gcalStatus" class="gcal-connect" onclick="conectarGoogle()">
@@ -2279,6 +2280,207 @@ function showErr(msg){
 }
 
 // ── HOME DASHBOARD ─────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════
+// SISTEMA DE PONTO
+// ═══════════════════════════════════════════════════════════
+
+const TIPO_PONTO = {
+  entrada:      { label:'Entrada',       icon:'ti-login',       cor:'#2D7A3A' },
+  inicio_pausa: { label:'Início pausa',  icon:'ti-coffee',      cor:'#C9A96E' },
+  fim_pausa:    { label:'Fim pausa',     icon:'ti-player-play', cor:'#C9A96E' },
+  saida:        { label:'Saída',         icon:'ti-logout',      cor:'#C0392B' },
+};
+const CARGA_HORARIA = 6 * 60;
+
+async function navPonto(){
+  const isAdmin = usuarioAtual?.perfil==='admin';
+  const usuario = usuarioAtual?.nome||'';
+  set('<div class="pt">Controle de Ponto</div><div class="ps">Carga horária: 6h · Pausa: 15 min</div>'+
+  '<div style="display:flex;align-items:center;justify-content:center;height:120px">'+
+  '<div style="width:24px;height:24px;border:3px solid var(--border-md);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite"></div></div>');
+  try {
+    const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+    const r = await fetchWithTimeout(
+      `${SB_URL}/rest/v1/registros_ponto?select=*&horario=gte.${inicioMes}&order=horario.desc&limit=500`,
+      {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}}
+    );
+    renderPonto(await r.json().catch(()=>[]), isAdmin, usuario);
+  } catch(e){ renderPonto([], isAdmin, usuario); }
+}
+
+function renderPonto(registros, isAdmin, usuarioLogado){
+  const hoje = new Date();
+  const hojeStr = hoje.toLocaleDateString('pt-BR');
+
+  function fmtHora(iso){ return new Date(iso).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
+  function fmtMin(min){ const h=Math.floor(min/60),m=min%60; return h+'h'+(m>0?String(m).padStart(2,'0')+'min':''); }
+
+  function calcMin(regs){
+    const s=[...regs].sort((a,b)=>new Date(a.horario)-new Date(b.horario));
+    let entrada=null,pausaIni=null,min=0;
+    s.forEach(r=>{
+      if(r.tipo==='entrada') entrada=new Date(r.horario);
+      else if(r.tipo==='inicio_pausa'&&entrada) pausaIni=new Date(r.horario);
+      else if(r.tipo==='fim_pausa') pausaIni=null;
+      else if(r.tipo==='saida'&&entrada){
+        const total=(new Date(r.horario)-entrada)/60000;
+        const pausa=pausaIni?(new Date(r.horario)-pausaIni)/60000:0;
+        min+=total-pausa; entrada=null;
+      }
+    });
+    if(entrada&&!pausaIni) min+=(new Date()-entrada)/60000;
+    return Math.max(0,Math.round(min));
+  }
+
+  // Determina próximo tipo para o usuário logado
+  const regHojeUser = registros.filter(r=>{
+    const d=new Date(r.horario).toLocaleDateString('pt-BR');
+    return d===hojeStr && r.usuario===usuarioLogado;
+  }).sort((a,b)=>new Date(a.horario)-new Date(b.horario));
+
+  const ultimoTipo = regHojeUser.length?regHojeUser[regHojeUser.length-1].tipo:null;
+  const proximoTipo = !ultimoTipo?'entrada'
+    :ultimoTipo==='entrada'?'inicio_pausa'
+    :ultimoTipo==='inicio_pausa'?'fim_pausa'
+    :ultimoTipo==='fim_pausa'?'saida':null;
+
+  const minHoje = calcMin(regHojeUser);
+  const pctHoje = Math.min(100,Math.round(minHoje/CARGA_HORARIA*100));
+
+  // ── Bloco de bater ponto ──────────────────────────────────
+  let pontoHtml = '';
+  if(!isAdmin){
+    if(proximoTipo){
+      const tp=TIPO_PONTO[proximoTipo];
+      pontoHtml=
+        '<div style="background:var(--white);border:1px solid var(--border);border-radius:var(--r-xl);padding:28px;margin-bottom:20px;text-align:center;box-shadow:var(--shadow-sm)">'+
+        '<div style="font-size:13px;color:var(--text-3);margin-bottom:16px">'+hojeStr+' · '+hoje.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'</div>'+
+        '<div style="margin-bottom:20px">'+
+        '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-2);margin-bottom:6px">'+
+        '<span>Horas trabalhadas hoje</span><span style="font-weight:600">'+fmtMin(minHoje)+' / 6h</span></div>'+
+        '<div style="height:8px;border-radius:4px;background:var(--bg-2)">'+
+        '<div style="width:'+pctHoje+'%;height:100%;border-radius:4px;background:'+(pctHoje>=100?'#2D7A3A':'var(--gold)')+'"></div></div>'+
+        (minHoje>0&&pctHoje<100?'<div style="font-size:11px;color:var(--text-3);margin-top:4px">Faltam '+fmtMin(CARGA_HORARIA-minHoje)+'</div>':'')+
+        '</div>'+
+        '<button onclick="registrarPonto(\''+proximoTipo+'\')" style="background:'+tp.cor+';color:#fff;border:none;border-radius:var(--r-full);padding:16px 40px;font-size:16px;font-weight:700;cursor:pointer;font-family:var(--font);box-shadow:0 4px 20px rgba(0,0,0,.15);display:inline-flex;align-items:center;gap:10px">'+
+        '<i class="ti '+tp.icon+'" style="font-size:20px"></i> '+tp.label+'</button>'+
+        (regHojeUser.length?
+          '<div style="margin-top:20px;display:flex;justify-content:center;gap:14px;flex-wrap:wrap">'+
+          regHojeUser.map(r=>{const tp2=TIPO_PONTO[r.tipo]||{};return(
+            '<div style="text-align:center">'+
+            '<div style="font-size:10px;color:var(--text-3);font-weight:600;text-transform:uppercase">'+tp2.label+'</div>'+
+            '<div style="font-size:15px;font-weight:700;color:'+(tp2.cor||'var(--text-1)')+'">'+fmtHora(r.horario)+'</div></div>'
+          );}).join('<div style="color:var(--border-md);font-size:18px;margin-top:10px">→</div>')+
+          '</div>':'')+'</div>';
+    } else {
+      pontoHtml='<div style="background:#E8F5EC;border:1px solid #B8DFC0;border-radius:var(--r-xl);padding:28px;margin-bottom:20px;text-align:center">'+
+      '<i class="ti ti-circle-check" style="font-size:36px;color:#2D7A3A;display:block;margin-bottom:8px"></i>'+
+      '<div style="font-size:16px;font-weight:700;color:#2D7A3A">Dia concluído!</div>'+
+      '<div style="font-size:13px;color:#3D7A4A;margin-top:4px">Total: <strong>'+fmtMin(minHoje)+'</strong></div></div>';
+    }
+  } else {
+    pontoHtml='<div style="display:flex;gap:10px;margin-bottom:20px">'+
+    '<button class="btn btnb" onclick="abrirRegistroPontoAdmin()"><i class="ti ti-clock-plus"></i> Registrar ponto retroativo</button>'+
+    '</div>';
+  }
+
+  // ── Histórico por dia ─────────────────────────────────────
+  const regsVisiveis = isAdmin ? registros : registros.filter(r=>r.usuario===usuarioLogado);
+  const porDia={};
+  regsVisiveis.forEach(r=>{
+    const d=new Date(r.horario).toLocaleDateString('pt-BR');
+    if(!porDia[d]) porDia[d]=[];
+    porDia[d].push(r);
+  });
+  const dias=Object.entries(porDia).sort((a,b)=>new Date(b[0].split('/').reverse().join('-'))-new Date(a[0].split('/').reverse().join('-')));
+
+  const histHtml=dias.slice(0,20).map(([dia,regs])=>{
+    const regsDia=regs.sort((a,b)=>new Date(a.horario)-new Date(b.horario));
+    const min=calcMin(regsDia);
+    const completo=!!regsDia.find(r=>r.tipo==='saida');
+    const diaHoje=dia===hojeStr;
+    return '<div style="background:var(--white);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;margin-bottom:10px;box-shadow:var(--shadow-xs)">'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'+
+    '<div style="font-size:13px;font-weight:700;color:var(--text-1)">'+dia+(diaHoje?' <span class="bdg ba">hoje</span>':'')+'</div>'+
+    '<div style="margin-left:auto;display:flex;align-items:center;gap:8px">'+
+    '<span style="font-size:13px;font-weight:600;color:'+(completo?'#2D7A3A':'var(--gold-dark)')+'">'+fmtMin(min)+'</span>'+
+    '<span class="bdg '+(completo?'bg':'ba')+'">'+(completo?'Completo':'Em andamento')+'</span>'+
+    (isAdmin?'<button class="btn btns" onclick="abrirRegistroPontoAdmin(\''+dia+'\')"><i class="ti ti-plus"></i></button>':'')+
+    '</div></div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+    regsDia.map(r=>{
+      const tp2=TIPO_PONTO[r.tipo]||{label:r.tipo,cor:'var(--text-2)',icon:'ti-clock'};
+      return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);padding:7px 12px;display:flex;align-items:center;gap:8px">'+
+      '<i class="ti '+tp2.icon+'" style="color:'+tp2.cor+';font-size:14px"></i>'+
+      '<div><div style="font-size:10px;color:var(--text-3);font-weight:600;text-transform:uppercase">'+tp2.label+'</div>'+
+      '<div style="font-size:14px;font-weight:700;color:var(--text-1)">'+fmtHora(r.horario)+
+      (r.horario_manual?'<span style="font-size:9px;color:var(--gold);margin-left:3px">●manual</span>':'')+
+      '</div>'+(isAdmin?'<div style="font-size:10px;color:var(--text-3)">'+r.usuario+'</div>':'')+
+      '</div></div>';
+    }).join('')+'</div></div>';
+  }).join('');
+
+  set(
+    '<div class="pt">Controle de Ponto</div>'+
+    '<div class="ps">Carga horária: 6h · Pausa: 15 min · '+hojeStr+'</div>'+
+    pontoHtml+
+    '<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">'+
+    (isAdmin?'Histórico — todos':'Meu histórico')+'</div>'+
+    (histHtml||'<div style="text-align:center;padding:32px;color:var(--text-3)">Nenhum registro ainda</div>')
+  );
+}
+
+async function registrarPonto(tipo){
+  const usuario = usuarioAtual?.nome||'Vitória';
+  try {
+    await sbInsert('registros_ponto',{
+      usuario, tipo,
+      horario: new Date().toISOString(),
+      horario_manual: false,
+      registrado_por: usuario,
+    });
+    await registrarLog('bateu ponto','ponto',usuario+' — '+(TIPO_PONTO[tipo]?.label||tipo));
+    navPonto();
+  } catch(e){ alert('Erro: '+e.message); }
+}
+
+function abrirRegistroPontoAdmin(diaPreenchido){
+  const hoje=new Date();
+  const dataVal=diaPreenchido
+    ? diaPreenchido.split('/').reverse().join('-').replace(/(\d{2})$/,'20$1')
+    : hoje.toISOString().split('T')[0];
+  abrirModal(
+    '<div class="mdt"><i class="ti ti-clock-plus" style="margin-right:8px;color:var(--gold)"></i>Registrar ponto retroativo</div>'+
+    '<label class="fl">Funcionário</label>'+
+    '<select class="fi" id="pt_user"><option>Vitória</option></select>'+
+    '<label class="fl">Tipo</label>'+
+    '<select class="fi" id="pt_tipo">'+
+    Object.entries(TIPO_PONTO).map(([k,v])=>'<option value="'+k+'">'+v.label+'</option>').join('')+
+    '</select>'+
+    '<div class="fr2"><div><label class="fl">Data</label><input class="fi" id="pt_data" type="date" value="'+dataVal+'"></div>'+
+    '<div><label class="fl">Horário</label><input class="fi" id="pt_hora" type="time" value="08:00"></div></div>'+
+    '<label class="fl">Observação</label><input class="fi" id="pt_obs" placeholder="Ex: Esqueceu de bater na entrada">'+
+    '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button>'+
+    '<button class="btn btnp" id="pt_btn" onclick="confirmarPontoAdmin()"><i class="ti ti-check"></i> Registrar</button></div>'
+  );
+}
+
+async function confirmarPontoAdmin(){
+  const btn=document.getElementById('pt_btn'); btn.disabled=true; btn.textContent='Salvando…';
+  const usuario=document.getElementById('pt_user').value;
+  const tipo=document.getElementById('pt_tipo').value;
+  const data=document.getElementById('pt_data').value;
+  const hora=document.getElementById('pt_hora').value;
+  const obs=document.getElementById('pt_obs').value||null;
+  if(!data||!hora){btn.disabled=false;btn.textContent='Registrar';alert('Informe data e hora.');return;}
+  const horario=new Date(data+'T'+hora+':00').toISOString();
+  try {
+    await sbInsert('registros_ponto',{usuario,tipo,horario,horario_manual:true,registrado_por:usuarioAtual?.nome||'admin',observacao:obs});
+    await registrarLog('ponto manual','ponto',usuario+' — '+(TIPO_PONTO[tipo]?.label||tipo)+' '+data+' '+hora);
+    fecharModal(); navPonto();
+  } catch(e){btn.disabled=false;btn.textContent='Registrar';alert('Erro: '+e.message);}
+}
+
 function rHome(){
   const at=AL.filter(a=>a.s==='A').length;
   const pr=AL.filter(a=>a.s==='P').length;
@@ -2397,9 +2599,8 @@ function nav(p){
     f_dash:navFDash, f_pacientes:navFPacientes,
     l_dash:navLDash, l_vendas:navLVendas, l_estoque:navLEstoque,
     l_encomendas:navLEncomendas, l_clientes:navLClientes, l_entrada:navLEntrada,
-    fin_geral:rFinGeral,
-    logs:rLogs,
-    gcal:rGcal
+    fin_geral:rFinGeral, logs:rLogs, gcal:rGcal,
+    ponto:navPonto
   };
   if(fn[p]) fn[p]();
 }
@@ -3367,6 +3568,12 @@ async function salvarEdicaoVenda(){
     data_venda:document.getElementById('vd_data').value||null,
     forma_pgto:document.getElementById('vd_pgto').value||null,
     vendedor:  document.getElementById('vd_vendedor')?.value||null,
+    participacao_vitoria:(()=>{
+      const vend = document.getElementById('vd_vendedor')?.value;
+      if(vend==='Vitoria') return 'atendeu';
+      const radio = document.querySelector('input[name="vd_vitpart"]:checked');
+      return (radio&&radio.value!=='nao') ? radio.value : 'nao';
+    })(),
   };
 
   try {
@@ -3656,6 +3863,12 @@ async function confirmarVenda(){
       forma_pgto:document.getElementById('vd_pgto').value||null,
       codigo_barras:window._vendaCodigoBarras||null,
       vendedor:document.getElementById('vd_vendedor')?.value||null,
+      participacao_vitoria:(()=>{
+        const vend = document.getElementById('vd_vendedor')?.value;
+        if(vend==='Vitoria') return 'atendeu';
+        const radio = document.querySelector('input[name="vd_vitpart"]:checked');
+        return (radio&&radio.value!=='nao') ? radio.value : 'nao';
+      })(),
     });
 
     // Dá baixa automática no estoque se tiver código de barras
@@ -3777,12 +3990,26 @@ function abrirNovaVenda(){
   '<div class="fr2"><div><label class="fl">Cliente</label><input class="fi" id="vd_cliente" placeholder="Nome"></div>'+
   '<div><label class="fl">Data</label><input class="fi" id="vd_data" type="date" value="'+yy+'-'+mm+'-'+dd+'"></div></div>'+
   '<div class="fr2"><div><label class="fl">Forma pgto</label><select class="fi" id="vd_pgto"><option>PIX</option><option>Cartão débito</option><option>Cartão crédito 2x</option><option>Dinheiro</option><option>Link de pgto</option></select></div>'+
-  '<div><label class="fl">Vendedor(a)</label><select class="fi" id="vd_vendedor">'+
-    '<option value="">— Selecione —</option>'+
-    '<option value="Vitoria">Vitória</option>'+
-    '<option value="Larissa">Larissa</option>'+
-    '<option value="Outro">Outro</option>'+
+  '<div><label class="fl">Quem atendeu</label><select class="fi" id="vd_vendedor">'+
+    '<option value="Larissa">Larissa (sem comissão Vitória)</option>'+
+    '<option value="Vitoria">Vitória (atendeu)</option>'+
   '</select></div></div>'+
+
+  // Participação da Vitória — aparece só quando for Larissa
+  '<div id="vd_part_box" style="background:rgba(201,169,110,.08);border:1px solid rgba(201,169,110,.25);border-radius:var(--r-md);padding:12px 14px;margin-bottom:12px">'+
+  '<label class="fl" style="margin-bottom:8px">Vitória participou desta venda?</label>'+
+  '<div style="display:flex;gap:10px">'+
+  '<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:var(--text-1)">'+
+    '<input type="radio" name="vd_vitpart" value="nao" checked style="accent-color:var(--gold)"> Não — só Larissa</label>'+
+  '<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:var(--text-1)">'+
+    '<input type="radio" name="vd_vitpart" value="provador" style="accent-color:var(--gold)"> Sim — provador/indicação (3%)</label>'+
+  '</div></div>'+
+
+  '<script>document.getElementById("vd_vendedor").onchange=function(){'+
+    'var box=document.getElementById("vd_part_box");'+
+    'box.style.display=this.value==="Larissa"?"":"none";'+
+  '}; document.getElementById("vd_vendedor").onchange();<'+'/script>'+
+
   '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btnp" id="vd_btn" onclick="confirmarVenda()">Registrar venda</button></div>');
 }
 
@@ -4449,14 +4676,16 @@ function blocoComissaoVitoria(todasVendas){
       mes=parseInt(p[1]); ano=parseInt('20'+p[2]);
     }
     const key = String(mes).padStart(2,'0')+'/'+ano;
-    if(!porMes[key]) porMes[key]={ total:0, vitoria:0, qtdTotal:0, qtdVitoria:0, vendas:[] };
+    if(!porMes[key]) porMes[key]={ total:0, vitoria:0, provador:0, qtdTotal:0, qtdVitoria:0, qtdProvador:0 };
     porMes[key].total += parseFloat(v.preco)||0;
     porMes[key].qtdTotal++;
-    if(v.vendedor==='Vitoria'){
+    if(v.participacao_vitoria==='atendeu' || v.vendedor==='Vitoria'){
       porMes[key].vitoria += parseFloat(v.preco)||0;
       porMes[key].qtdVitoria++;
+    } else if(v.participacao_vitoria==='provador'){
+      porMes[key].provador += parseFloat(v.preco)||0;
+      porMes[key].qtdProvador++;
     }
-    porMes[key].vendas.push(v);
   });
 
   const meses = Object.entries(porMes).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,6);
@@ -4472,9 +4701,14 @@ function blocoComissaoVitoria(todasVendas){
   meses.map(([key,d])=>{
     const [mm,yyyy] = key.split('/');
     const isAtual = key===mesAtualKey;
+    // Regra de comissão:
+    // - Atendeu: conta no % de participação → ≥50% = 5%, <50% = 3%
+    // - Provador/indicação: sempre 3% fixo, não entra no % de participação
     const pct = d.total>0 ? (d.vitoria/d.total*100) : 0;
-    const comPct = pct>=50 ? 5 : 3; // regra: >=50% → 5%, <50% → 3%
-    const comValor = d.vitoria * (comPct/100);
+    const comPctAtendeu = pct>=50 ? 5 : (d.vitoria>0 ? 3 : 0);
+    const comAtendeu = d.vitoria * (comPctAtendeu/100);
+    const comProvador = d.provador * 0.03;
+    const comTotal = comAtendeu + comProvador;
     const pctLabel = pct.toFixed(1)+'%';
     const pctColor = pct>=50 ? '#2D7A3A' : 'var(--gold-dark)';
     return '<tr style="'+(isAtual?'background:rgba(201,169,110,.05)':'')+'">'+
@@ -4482,13 +4716,22 @@ function blocoComissaoVitoria(todasVendas){
       (isAtual?' <span style="font-size:10px;color:var(--gold-dark)">● atual</span>':'')+
     '</td>'+
     '<td>'+fR(d.total)+'<span style="font-size:10px;color:var(--text-3);margin-left:4px">'+d.qtdTotal+' vendas</span></td>'+
-    '<td style="font-weight:500">'+fR(d.vitoria)+'<span style="font-size:10px;color:var(--text-3);margin-left:4px">'+d.qtdVitoria+' vendas</span></td>'+
-    '<td><span style="font-weight:700;color:'+pctColor+'">'+pctLabel+'</span>'+
+    '<td>'+
+      (d.vitoria>0?'<div style="font-size:12px;font-weight:500">Atendeu: '+fR(d.vitoria)+' ('+d.qtdVitoria+')</div>':'')+
+      (d.provador>0?'<div style="font-size:12px;color:var(--text-2)">Provador: '+fR(d.provador)+' ('+d.qtdProvador+')</div>':'')+
+      (d.vitoria===0&&d.provador===0?'<span style="color:var(--text-3)">—</span>':'')+
+    '</td>'+
+    '<td>'+(d.vitoria>0?'<span style="font-weight:700;color:'+pctColor+'">'+pctLabel+'</span>'+
       '<div style="height:4px;border-radius:2px;background:var(--bg-2);margin-top:3px;width:80px">'+
-      '<div style="width:'+Math.min(pct,100)+'%;height:100%;border-radius:2px;background:'+pctColor+'"></div></div></td>'+
-    '<td><span class="bdg '+(comPct===5?'bg':'ba')+'">'+comPct+'%</span></td>'+
-    '<td style="font-weight:700;color:'+(comValor>0?'#2D7A3A':'var(--text-3)')+'">'+fR(comValor)+
-      (isAtual?'<span style="font-size:10px;color:var(--text-3);display:block">parcial</span>':'')+
+      '<div style="width:'+Math.min(pct,100)+'%;height:100%;border-radius:2px;background:'+pctColor+'"></div></div>':
+      (d.provador>0?'<span class="bdg ba">Provador</span>':'—'))+'</td>'+
+    '<td>'+
+      (d.vitoria>0?'<span class="bdg '+(comPctAtendeu===5?'bg':'ba')+'">'+comPctAtendeu+'%</span>':'')+
+      (d.provador>0?'<span class="bdg bx" style="margin-left:4px">3% fixo</span>':'')+
+      (d.vitoria===0&&d.provador===0?'<span style="color:var(--text-3)">—</span>':'')+
+    '</td>'+
+    '<td style="font-weight:700;color:'+(comTotal>0?'#2D7A3A':'var(--text-3)')+'">'+fR(comTotal)+
+      (isAtual&&comTotal>0?'<span style="font-size:10px;color:var(--text-3);display:block">parcial</span>':'')+
     '</td>'+
     '</tr>';
   }).join('')+
