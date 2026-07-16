@@ -2653,16 +2653,25 @@ async function navPAlunos(){
     window._alunosDB = AL;
     renderPAlunos();
     const rows = await sbGet('alunos','nome');
+    // Nomes que o banco conhece (incluindo excluídos)
     const dbNomes = new Set(rows.map(r=>r.nome.trim().toLowerCase()));
-    const dbMapped = rows.map(r=>({
-      id:r.id, s:r.status, n:r.nome, tel:r.telefone,
-      pl:r.plano, h:r.horario||'—', v:parseFloat(r.valor)||0,
-      pg:r.ultimo_pagto, px:r.prox_vencto
-    }));
-    // Merge: banco tem prioridade, locais que não estão no banco completam
+    // Excluídos no banco — não devem aparecer
+    const excluidos = new Set(rows.filter(r=>r.status==='excluido').map(r=>r.nome.trim().toLowerCase()));
+    const dbMapped = rows
+      .filter(r=>r.status!=='excluido')
+      .map(r=>({
+        id:r.id, s:r.status, n:r.nome, tel:r.telefone,
+        pl:r.plano, h:r.horario||'—', v:parseFloat(r.valor)||0,
+        pg:r.ultimo_pagto, px:r.prox_vencto
+      }));
+    // Locais: só os que o banco não conhece E não foram excluídos
+    const localExtras = AL.filter(a=>
+      !dbNomes.has(a.n.trim().toLowerCase()) &&
+      !excluidos.has(a.n.trim().toLowerCase())
+    );
     window._alunosDB = rows.length > 0
-      ? [...dbMapped, ...AL.filter(a=>!dbNomes.has(a.n.trim().toLowerCase()))]
-      : AL;
+      ? [...dbMapped, ...localExtras]
+      : AL.filter(a=>!excluidos.has(a.n.trim().toLowerCase()));
     renderPAlunos();
   } catch(e){
     console.warn('navPAlunos:', e.message);
@@ -2978,16 +2987,28 @@ async function excluirAluno(){
   if(!a) return;
   if(!confirm('Excluir o cadastro de '+a.n+'?\n\nEsta ação não pode ser desfeita.')) return;
   try {
-    // Remove do banco se existir
+    // Busca no banco pelo nome
     const r = await fetchWithTimeout(
       `${SB_URL}/rest/v1/alunos?nome=eq.${encodeURIComponent(a.n)}&limit=1`,
       { headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY} }
     );
     const lista = await r.json();
+
     if(lista[0]){
+      // Já está no banco — exclui
       await sbDelete('alunos', lista[0].id);
+    } else {
+      // Só existe no hardcode — insere com status 'excluido' para marcar
+      // Assim o banco "sabe" que foi excluído e não volta pelo merge
+      await sbInsert('alunos',{
+        nome: a.n, status: 'excluido',
+        telefone: a.tel||null, plano: a.pl||null,
+        horario: a.h||null, valor: parseFloat(a.v)||0,
+        ultimo_pagto: a.pg||null, prox_vencto: a.px||null,
+      });
     }
-    // Remove do cache local
+
+    // Remove de todos os caches locais
     const remover = (arr) => {
       const i = arr.findIndex(x=>x.n===a.n);
       if(i>=0) arr.splice(i,1);
@@ -2995,7 +3016,7 @@ async function excluirAluno(){
     remover(AL);
     if(window._alunosDB) remover(window._alunosDB);
 
-    await registrarLog('excluiu aluno','alunos', a.n+' ('+( a.s==='E'?'Experimental':'Prospect')+')');
+    await registrarLog('excluiu aluno','alunos', a.n);
     navPAlunos();
   } catch(e){ alert('Erro ao excluir: '+e.message); }
 }
