@@ -3051,35 +3051,56 @@ function renderPFin(at, pags){
   const rec   = at.reduce((s,a)=>s+(parseFloat(a.v)||0),0);
   const sd    = at.filter(a=>!a.px||a.px==='parceria').length;
 
-  // Mês/ano atual
-  const agora   = new Date();
+  const agora    = new Date(); agora.setHours(0,0,0,0);
   const mesAtual = agora.getMonth()+1;
   const anoAtual = agora.getFullYear();
   const mesStr   = String(mesAtual).padStart(2,'0');
   const anoStr   = String(anoAtual).slice(2);
 
-  // Verifica se aluno já pagou neste mês
-  // Critério: ultimo_pagto no formato dd/mm/aa e mês/ano batem com o atual
-  function jaPagouEsteMes(a){
-    if(!a.pg) return false;
-    const partes = a.pg.split('/');
-    if(partes.length<3) return false;
-    const mm = partes[1]; const yy = partes[2];
-    return mm===mesStr && yy===anoStr;
+  // Converte prox_vencto dd/mm/aa → Date
+  function parseData(s){
+    if(!s||s==='parceria') return null;
+    const p=s.split('/'); if(p.length<3) return null;
+    return new Date('20'+p[2]+'-'+p[1]+'-'+p[0]);
   }
 
-  // Separa pagos e pendentes
-  const pagos    = at.filter(a=>jaPagouEsteMes(a));
-  const pendentes = at.filter(a=>!jaPagouEsteMes(a));
+  // Pendente = próx vencimento <= hoje (já venceu ou vence hoje)
+  // Pago/em dia = próx vencimento > hoje (ainda não chegou a hora de pagar)
+  function isPendente(a){
+    // Sem data: sempre pendente
+    if(!a.px||a.px==='parceria') return true;
+    const d = parseData(a.px);
+    if(!d) return true;
+    // Se vencimento é hoje ou já passou → pendente
+    return d <= agora;
+  }
 
-  // Ordena pendentes por vencimento mais próximo
-  const pendOrdenados = pendentes.sort((a,b)=>{
-    if(!a.px||a.px==='parceria') return 1;
-    if(!b.px||b.px==='parceria') return -1;
-    const[da,ma]=(a.px).split('/').map(Number);
-    const[db,mb]=(b.px).split('/').map(Number);
-    return(ma*100+da)-(mb*100+db);
+  const pendentes   = at.filter(a=>isPendente(a));
+  const emDia       = at.filter(a=>!isPendente(a));
+
+  // Ordena pendentes: mais atrasados primeiro
+  const pendOrdenados = [...pendentes].sort((a,b)=>{
+    const da=parseData(a.px), db=parseData(b.px);
+    if(!da) return 1; if(!db) return -1;
+    return da-db;
   });
+
+  // Ordena em dia: próximos a vencer primeiro
+  const emDiaOrdenados = [...emDia].sort((a,b)=>{
+    const da=parseData(a.px), db=parseData(b.px);
+    if(!da) return 1; if(!db) return -1;
+    return da-db;
+  });
+
+  function diasAtraso(px){
+    const d=parseData(px); if(!d) return 0;
+    return Math.floor((agora-d)/(1000*60*60*24));
+  }
+
+  function diasAteVencer(px){
+    const d=parseData(px); if(!d) return 999;
+    return Math.floor((d-agora)/(1000*60*60*24));
+  }
 
   set(
     '<div class="pt">Financeiro — Pilates</div>'+
@@ -3087,69 +3108,71 @@ function renderPFin(at, pags){
 
     '<div class="metrics3">'+
     (permF.verFinGeral ? mc('Receita estimada/mês','vg','R$ '+rec.toLocaleString('pt-BR'),at.length+' ativos') : '')+
-    mc('Pagos este mês','vg',pagos.length,'de '+at.length+' ativos')+
-    mc('Pendentes','va',pendentes.length, sd>0?sd+' sem data':'')+
+    mc('Em dia','vg',emDia.length,'de '+at.length+' ativos')+
+    mc('Pendentes','vr',pendentes.length, sd>0?sd+' sem data':'')+
     '</div>'+
 
-    // Botão registrar
     '<div class="tb"><button class="btn btnb" onclick="abrirPagPilates(null,null)">'+
     '<i class="ti ti-plus"></i> Registrar pagamento</button></div>'+
 
-    // Últimos pagamentos registrados
+    // Últimos pagamentos
     (pags&&pags.length?
     '<div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
-    '<i class="ti ti-cash"></i> Últimos pagamentos registrados</div>'+
+    '<i class="ti ti-cash"></i> Últimos pagamentos</div>'+
     '<div class="tw" style="margin-bottom:18px"><table><thead><tr>'+
     '<th>Aluno</th><th>Referência</th><th>Valor</th><th>Forma</th><th>Data pgto</th>'+
     '</tr></thead><tbody>'+
     pags.slice(-15).reverse().map(p=>
-      '<tr style="background:rgba(22,163,74,.03)">'+
-      '<td style="font-weight:500">'+p.aluno_nome+'</td>'+
-      '<td style="color:var(--brown-light)">'+p.referencia+'</td>'+
-      '<td style="color:#3D5C1A;font-weight:600">'+fR(p.valor)+'</td>'+
-      '<td style="color:var(--brown-light)">'+p.forma_pgto+'</td>'+
-      '<td style="color:var(--brown-light)">'+p.data_pgto+'</td>'+
-      '</tr>'
-    ).join('')+'</tbody></table></div>':'')+ 
+      '<tr><td style="font-weight:500">'+p.aluno_nome+'</td>'+
+      '<td style="color:var(--text-2)">'+p.referencia+'</td>'+
+      '<td style="color:#2D7A3A;font-weight:600">'+fR(p.valor)+'</td>'+
+      '<td style="color:var(--text-2)">'+p.forma_pgto+'</td>'+
+      '<td style="color:var(--text-2)">'+p.data_pgto+'</td></tr>'
+    ).join('')+'</tbody></table></div>':'') +
 
-    // Pendentes de pagamento
-    '<div style="font-size:11px;font-weight:600;color:#8B2E1A;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
-    '<i class="ti ti-alert-circle"></i> Pendentes este mês ('+pendentes.length+')</div>'+
+    // ── PENDENTES ─────────────────────────────────────────────
+    '<div style="font-size:11px;font-weight:600;color:#C0392B;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
+    '<i class="ti ti-alert-circle"></i> Pendentes / Vencidos ('+pendentes.length+')</div>'+
     '<div class="tw" style="margin-bottom:18px"><table><thead><tr>'+
-    '<th>Aluno</th><th>Plano</th><th>Último pgto</th><th>Próx. vencto</th><th>Valor</th><th></th>'+
+    '<th>Aluno</th><th>Plano</th><th>Último pgto</th><th>Venceu em</th><th>Atraso</th><th>Valor</th><th></th>'+
     '</tr></thead><tbody>'+
     (pendOrdenados.length?
-    pendOrdenados.map(a=>
-      '<tr>'+
+    pendOrdenados.map(a=>{
+      const atraso = diasAtraso(a.px);
+      return '<tr>'+
       '<td>'+ncell(a)+'</td>'+
-      '<td style="color:var(--brown-light)">'+a.pl+'</td>'+
-      '<td style="color:var(--brown-light)">'+(a.pg||'—')+'</td>'+
-      '<td>'+(a.px&&a.px!=='parceria'?'<span style="color:#8B2E1A;font-weight:500">'+a.px+'</span>':'<span style="color:var(--brown-light)">'+( a.px||'—')+'</span>')+'</td>'+
+      '<td style="color:var(--text-2)">'+a.pl+'</td>'+
+      '<td style="color:var(--text-2)">'+(a.pg||'—')+'</td>'+
+      '<td><span style="color:#C0392B;font-weight:500">'+(a.px&&a.px!=='parceria'?a.px:'—')+'</span></td>'+
+      '<td>'+(atraso>0?'<span class="bdg br">'+atraso+'d</span>':a.px?'<span class="bdg ba">hoje</span>':'<span style="color:var(--text-3)">—</span>')+'</td>'+
       '<td style="font-weight:500">R$ '+a.v+'</td>'+
       '<td><button class="btn btns btnb" onclick="abrirPagPilates(\''+esc(a.n)+'\','+(a.v||0)+')">✓ Pago</button></td>'+
-      '</tr>'
-    ).join(''):
-    '<tr><td colspan="6" style="text-align:center;padding:20px;color:#3D5C1A">'+
+      '</tr>';
+    }).join(''):
+    '<tr><td colspan="7" style="text-align:center;padding:20px;color:#2D7A3A">'+
     '<i class="ti ti-circle-check" style="font-size:18px;display:block;margin-bottom:4px"></i>'+
-    'Todos pagaram este mês!</td></tr>')+
+    'Nenhum vencido no momento!</td></tr>')+
     '</tbody></table></div>'+
 
-    // Já pagaram este mês
-    (pagos.length?
-    '<div style="font-size:11px;font-weight:600;color:#3D5C1A;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
-    '<i class="ti ti-circle-check"></i> Pagos este mês ('+pagos.length+')</div>'+
+    // ── EM DIA ────────────────────────────────────────────────
+    (emDia.length?
+    '<div style="font-size:11px;font-weight:600;color:#2D7A3A;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
+    '<i class="ti ti-circle-check"></i> Em dia — próximos vencimentos ('+emDia.length+')</div>'+
     '<div class="tw"><table><thead><tr>'+
-    '<th>Aluno</th><th>Plano</th><th>Pagou em</th><th>Próx. vencto</th><th>Valor</th>'+
+    '<th>Aluno</th><th>Plano</th><th>Último pgto</th><th>Próx. vencimento</th><th>Faltam</th><th>Valor</th>'+
     '</tr></thead><tbody>'+
-    pagos.map(a=>
-      '<tr style="background:rgba(22,163,74,.03)">'+
+    emDiaOrdenados.map(a=>{
+      const dias = diasAteVencer(a.px);
+      const urgente = dias<=5;
+      return '<tr style="'+(urgente?'background:rgba(201,169,110,.04)':'')+'">'+
       '<td>'+ncell(a)+'</td>'+
-      '<td style="color:var(--brown-light)">'+a.pl+'</td>'+
-      '<td style="color:#3D5C1A;font-weight:500">'+a.pg+'</td>'+
-      '<td style="color:var(--brown-light)">'+(a.px||'—')+'</td>'+
-      '<td style="color:var(--brown-light)">R$ '+a.v+'</td>'+
-      '</tr>'
-    ).join('')+'</tbody></table></div>':'')
+      '<td style="color:var(--text-2)">'+a.pl+'</td>'+
+      '<td style="color:var(--text-2)">'+(a.pg||'—')+'</td>'+
+      '<td><span style="color:'+(urgente?'var(--gold-dark)':'#2D7A3A');+'font-weight:500">'+(a.px||'—')+'</span></td>'+
+      '<td>'+(dias<=30?'<span class="bdg '+(urgente?'ba':'bg')+'">'+dias+'d</span>':'<span style="color:var(--text-3)">'+dias+'d</span>')+'</td>'+
+      '<td style="color:var(--text-2)">R$ '+a.v+'</td>'+
+      '</tr>';
+    }).join('')+'</tbody></table></div>':'')
   );
 }
 
@@ -3181,19 +3204,38 @@ function renderFDash(dados){
 }
 
 async function navFPacientes(){
-  // Mostra imediatamente do cache ou local
-  const cacheAtual = (window._fisioCache||FISIO).filter(p=>p.status!=='alta');
+  const cacheAtual = (window._fisioCache||FISIO).filter(p=>p.status!=='alta'&&p.s!=='alta');
   renderFPacientes(cacheAtual);
   try {
-    const rows = await sbGet('pacientes_fisio','nome');
-    // Merge banco + FISIO local (sem duplicar)
-    const dbNomes = new Set(rows.map(r=>r.nome));
-    const merged = [
-      ...rows.map(r=>({id:r.id,n:r.nome,sessoes:r.sessoes_contratadas,realizadas:r.sessoes_realizadas||0,status:r.status||'ativo',datas:[]})),
-      ...FISIO.filter(p=>!dbNomes.has(p.n)).map(p=>({...p,status:'ativo'}))
-    ];
+    const [pacRows, sessRows] = await Promise.all([
+      sbGet('pacientes_fisio','nome'),
+      sbGet('sessoes_fisio','data_sessao').catch(()=>[])
+    ]);
+
+    // Agrupa datas por paciente_id
+    const datasMap = {};
+    sessRows.forEach(s=>{
+      if(!datasMap[s.paciente_id]) datasMap[s.paciente_id]=[];
+      if(s.data_sessao){
+        const d = new Date(s.data_sessao);
+        datasMap[s.paciente_id].push(
+          String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getFullYear()).slice(2)
+        );
+      }
+    });
+
+    const merged = pacRows.map(r=>({
+      id:r.id, n:r.nome, tel:r.telefone,
+      sessoes:r.sessoes_contratadas,
+      realizadas:r.sessoes_realizadas||0,
+      status:r.status||'ativo',
+      s:r.status||'ativo',
+      datas: datasMap[r.id]||[]
+    }));
+
     window._fisioCache = merged;
     const ativos = merged.filter(p=>p.status!=='alta');
+    window._fisioListaAtual = ativos;
     renderFPacientes(ativos);
   } catch(e){ console.warn('Supabase pacientes:', e.message); }
 }
@@ -3846,21 +3888,83 @@ async function confirmarPagamento(){
 
 // ── REGISTRAR SESSÃO FISIO NO BANCO ───────────────────────
 async function confirmarSessao(){
-  const nome=document.getElementById('fs_nome').value;
-  const data=document.getElementById('fs_data').value;
-  const btn=document.getElementById('fs_btn');
+  const nome = document.getElementById('fs_nome').value;
+  const data = document.getElementById('fs_data').value;
+  const obs  = document.getElementById('fs_obs')?.value||null;
+  const btn  = document.getElementById('fs_btn');
   btn.disabled=true; btn.textContent='Salvando…';
   try {
-    // busca paciente no banco
-    const rows=await sbGet('pacientes_fisio','id');
-    const pac=rows.find(r=>r.nome===nome);
-    if(pac){
-      await sbInsert('sessoes_fisio',{paciente_id:pac.id,paciente_nome:nome,data_sessao:data});
-      await sbUpdate('pacientes_fisio',pac.id,{sessoes_realizadas:(pac.sessoes_realizadas||0)+1});
+    const rows = await sbGet('pacientes_fisio','id');
+    const pac  = rows.find(r=>r.nome===nome);
+    if(!pac){ alert('Paciente não encontrado no banco.'); btn.disabled=false; btn.textContent='Registrar'; return; }
+
+    const novasRealizadas = (pac.sessoes_realizadas||0) + 1;
+
+    // Formata data para salvar nas datas dd/mm/aa
+    const dataFmt = data ? (()=>{
+      const [y,m,d] = data.split('-');
+      return d+'/'+m+'/'+y.slice(2);
+    })() : null;
+
+    // Busca datas já registradas
+    const sesoesAntigas = await sbGet('sessoes_fisio','id');
+    const datasList = sesoesAntigas
+      .filter(s=>s.paciente_id===pac.id)
+      .map(s=>s.data_sessao ? (()=>{
+        const d = new Date(s.data_sessao);
+        return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getFullYear()).slice(2);
+      })() : '—')
+      .concat(dataFmt||'—');
+
+    // Registra sessão
+    await sbInsert('sessoes_fisio',{
+      paciente_id: pac.id,
+      paciente_nome: nome,
+      data_sessao: data,
+      observacao: obs
+    });
+
+    // Verifica se completou o plano → alta automática
+    const completou = pac.sessoes_contratadas && novasRealizadas >= pac.sessoes_contratadas;
+
+    await sbUpdate('pacientes_fisio', pac.id, {
+      sessoes_realizadas: novasRealizadas,
+      ...(completou ? {status:'alta'} : {})
+    });
+
+    // Atualiza cache
+    if(window._fisioCache){
+      const i = window._fisioCache.findIndex(x=>x.n===nome);
+      if(i>=0){
+        window._fisioCache[i].realizadas = novasRealizadas;
+        window._fisioCache[i].datas = datasList;
+        if(completou){ window._fisioCache[i].status='alta'; window._fisioCache[i].s='alta'; }
+      }
     }
-    await registrarLog('registrou sessão', 'sessoes_fisio', 'Sessão de '+nome+' em '+data);
+
+    await registrarLog('registrou sessão','sessoes_fisio','Sessão de '+nome+' em '+(dataFmt||data)+(completou?' — PLANO COMPLETO → ALTA':'')+( obs?' | '+obs:''));
     fecharModal();
-    navFDash();
+
+    if(completou){
+      // Mostra aviso de alta automática e vai para o dashboard
+      setTimeout(()=>{
+        abrirModal(
+          '<div style="text-align:center;padding:8px">'+
+          '<div style="width:56px;height:56px;border-radius:50%;background:#E8F5EC;display:flex;align-items:center;justify-content:center;margin:0 auto 14px">'+
+          '<i class="ti ti-user-check" style="font-size:28px;color:#2D7A3A"></i></div>'+
+          '<div style="font-family:var(--font-serif);font-size:20px;font-weight:600;margin-bottom:8px">Plano concluído!</div>'+
+          '<div style="font-size:13px;color:var(--text-2);margin-bottom:16px">'+
+          '<strong>'+nome+'</strong> completou todas as '+pac.sessoes_contratadas+' sessões e foi automaticamente movido para "Com alta".</div>'+
+          '<div class="mdf" style="justify-content:center">'+
+          '<button class="btn btne" onclick="fecharModal();navFPacientes()">Ver pacientes</button>'+
+          '</div></div>'
+        );
+      },200);
+    } else {
+      // Volta para a ficha do paciente atualizada
+      window._fisioCache = null;
+      navFPacientes();
+    }
   } catch(e){ btn.disabled=false; btn.textContent='Registrar'; alert('Erro: '+e.message); }
 }
 
