@@ -3316,7 +3316,7 @@ function renderFPacientes(dados){
     dados.map((p,i)=>{
       const pct=p.sessoes?Math.min(100,Math.round(p.realizadas/p.sessoes*100)):null;
       const ok=p.sessoes&&p.realizadas>=p.sessoes;
-      return '<div style="background:var(--white);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;border-left:3px solid '+(ok?'#5C7A2E':p.realizadas>0?'#4A6B2E':'#B8924A')+'" onclick="verPaciente('+i+')">'+
+      return '<div style="background:var(--white);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;border-left:3px solid '+(ok?'#5C7A2E':p.realizadas>0?'#4A6B2E':'#B8924A')+'" onclick="verPacienteNome(\''+esc(p.n)+'\')">'+
       '<div style="font-size:13px;font-weight:500;margin-bottom:4px;color:var(--brown)">'+p.n+'</div>'+
       '<div style="font-size:11px;color:var(--brown-light);margin-bottom:8px">'+(p.sessoes?p.realizadas+' / '+p.sessoes+' sessões':p.realizadas+' sessões (livre)')+'</div>'+
       (pct!=null?'<div style="height:5px;border-radius:3px;background:var(--cream-dark)"><div style="width:'+pct+'%;height:100%;border-radius:3px;background:'+(ok?'#5C7A2E':'#4A6B2E')+'"></div></div>':'')+
@@ -3363,9 +3363,21 @@ function navFAltas(){
   );
 }
 
-function verPaciente(idx){
-  const cache = window._fisioListaAtual || window._fisioCache || FISIO;
-  const p = cache[idx];
+function verPacienteNome(nome){
+  const cache = window._fisioCache || window._fisioListaAtual || FISIO;
+  const p = cache.find(x=>x.n===nome);
+  if(!p){ console.warn('Paciente não encontrado:', nome); return; }
+  verPaciente(p);
+}
+
+function verPaciente(pOuIdx){
+  // Aceita objeto direto ou índice (legado)
+  let p;
+  if(typeof pOuIdx === 'object') p = pOuIdx;
+  else {
+    const cache = window._fisioListaAtual || window._fisioCache || FISIO;
+    p = cache[pOuIdx];
+  }
   if(!p) return;
   window._pacienteAtual = p;
   const ok     = p.sessoes && p.realizadas >= p.sessoes;
@@ -4555,29 +4567,6 @@ function verTurmaGoogle(d, hr, alunosEnc){
 function verTurma(d,hr){
   const aula=GD[d+'-'+hr]||[], livre=CAP-aula.length;
   verTurmaGoogle(d,hr,encodeURIComponent(JSON.stringify(aula)));
-}
-
-function verPaciente(idx){
-  const cache=window._fisioCache||FISIO;
-  const p=cache[idx];
-  if(!p) return;
-  const ok=p.sessoes&&p.realizadas>=p.sessoes;
-  const faltam=p.sessoes?Math.max(0,p.sessoes-p.realizadas):null;
-  set('<div class="tb"><button class="btn" onclick="nav(\'f_pacientes\')"><i class="ti ti-arrow-left"></i> Voltar</button></div>'+
-  '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'+
-  '<div style="width:44px;height:44px;border-radius:50%;background:#d1fae5;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:500;color:#065f46">'+p.n.slice(0,2).toUpperCase()+'</div>'+
-  '<div><div style="font-size:15px;font-weight:500">'+p.n+'</div></div>'+
-  '<span style="margin-left:auto"><span class="bdg '+(ok?'bg':p.realizadas>0?'ba':'bx')+'">'+(ok?'Concluído':p.realizadas>0?'Em andamento':'Aguardando')+'</span></span></div>'+
-  '<div class="dp"><h3 style="color:#059669">Sessões</h3>'+
-  dr('Sessões contratadas',p.sessoes||'Sem contrato fixo')+
-  dr('Sessões realizadas',p.realizadas)+
-  (faltam!=null?dr('Faltam',faltam+' sessão(ões)'):'')+
-  '</div>'+
-  (p.datas&&p.datas.length?'<div class="dp"><h3 style="color:#059669">Datas realizadas</h3>'+
-  '<div style="display:flex;flex-wrap:wrap;gap:4px;padding:4px 0">'+
-  p.datas.map(d=>'<span style="background:#d1fae5;color:#065f46;padding:3px 8px;border-radius:6px;font-size:11px">'+(d||'—')+'</span>').join('')+
-  '</div></div>':'')+
-  '<div style="display:flex;gap:8px"><button class="btn btne" onclick="abrirRegistrarSessao(\''+esc(p.n)+'\')"><i class="ti ti-plus"></i> Registrar sessão</button></div>');
 }
 
 function abrirModal(h){
