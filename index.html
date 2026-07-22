@@ -3219,10 +3219,28 @@ async function navFPacientes(){
       if(s.data_sessao){
         const d = new Date(s.data_sessao);
         datasMap[s.paciente_id].push(
-          String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getFullYear()).slice(2)
+          String(d.getDate()).padStart(2,'0')+'/'+
+          String(d.getMonth()+1).padStart(2,'0')+'/'+
+          String(d.getFullYear()).slice(2)
         );
       }
     });
+
+    // Verifica e dá alta automática para quem completou
+    const paraAltaAutomatica = pacRows.filter(r=>
+      r.status !== 'alta' &&
+      r.sessoes_contratadas &&
+      (r.sessoes_realizadas||0) >= r.sessoes_contratadas
+    );
+
+    // Dá alta em paralelo para quem completou
+    if(paraAltaAutomatica.length > 0){
+      await Promise.all(paraAltaAutomatica.map(r=>
+        sbUpdate('pacientes_fisio', r.id, {status:'alta'}).catch(()=>{})
+      ));
+      // Atualiza status localmente
+      paraAltaAutomatica.forEach(r=>{ r.status='alta'; });
+    }
 
     const merged = pacRows.map(r=>({
       id:r.id, n:r.nome, tel:r.telefone,
@@ -3422,8 +3440,19 @@ async function navLVendas(){
   renderLVendas(VENDAS);
   try {
     const rows = await sbGet('vendas','criado_em');
-    const dbIds = new Set(rows.map(r=>r.id));
-    const all = rows.length > 0 ? [...rows.map(r=>({id:r.id,item:r.item,marca:r.marca,custo:r.custo,preco:r.preco,cliente:r.cliente,data:r.data_venda||'—',pgto:r.forma_pgto||'—'})), ...VENDAS.filter(v=>!dbIds.has(v.id))] : VENDAS;
+    const all = rows.length > 0 ? rows.map(r=>({
+      id:    r.id,
+      item:  r.item,
+      marca: r.marca,
+      custo: r.custo,
+      preco: r.preco,
+      cliente: r.cliente,
+      data:  r.data_venda||'—',
+      pgto:  r.forma_pgto||'—',
+      vendedor: r.vendedor||null,
+      participacao_vitoria: r.participacao_vitoria||'nao',
+      codigo_barras: r.codigo_barras||null,
+    })) : VENDAS;
     window._vendasCache = all;
     renderLVendas(all);
   } catch(e){ console.warn('Supabase vendas:', e.message); }
