@@ -3107,6 +3107,14 @@ function renderPFin(at, pags){
     return Math.floor((d-agora)/(1000*60*60*24));
   }
 
+  // Separa em 3 grupos:
+  // 1. Vencidos (px existe e já passou)
+  // 2. Sem data (px e pg ambos vazios → parceria)
+  // 3. Em dia (px existe e ainda não passou)
+  const vencidos2   = pendentes.filter(a=>a.px&&a.px!=='parceria');
+  const semDadosPag = pendentes.filter(a=>(!a.px||a.px==='parceria')&&!a.pg);
+  const semVencSoPg = pendentes.filter(a=>(!a.px||a.px==='parceria')&&a.pg); // pagou mas sem próx data
+
   set(
     '<div class="pt">Financeiro — Pilates</div>'+
     '<div class="ps">Controle de mensalidades · '+mesAtual+'/'+anoAtual+'</div>'+
@@ -3114,13 +3122,35 @@ function renderPFin(at, pags){
     '<div class="metrics3">'+
     (permF.verFinGeral ? mc('Receita estimada/mês','vg','R$ '+rec.toLocaleString('pt-BR'),at.length+' ativos') : '')+
     mc('Em dia','vg',emDia.length,'de '+at.length+' ativos')+
-    mc('Pendentes','vr',pendentes.length, sd>0?sd+' sem data':'')+
+    mc('Pendentes','vr',pendentes.length, semDadosPag.length>0?semDadosPag.length+' parcerias':'')+
     '</div>'+
 
     '<div class="tb"><button class="btn btnb" onclick="abrirPagPilates(null,null)">'+
     '<i class="ti ti-plus"></i> Registrar pagamento</button></div>'+
 
-    // ── 1. PRÓXIMOS A VENCER (em dia, mais urgentes primeiro) ─
+    // ── 1. VENCIDOS ───────────────────────────────────────────
+    (vencidos2.length?
+    '<div style="font-size:11px;font-weight:600;color:#C0392B;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
+    '<i class="ti ti-alert-circle"></i> Vencidos ('+vencidos2.length+')</div>'+
+    '<div class="tw" style="margin-bottom:18px"><table><thead><tr>'+
+    '<th>Aluno</th><th>Plano</th><th>Venceu em</th><th>Atraso</th><th>Valor</th><th></th>'+
+    '</tr></thead><tbody>'+
+    [...vencidos2].sort((a,b)=>{
+      const da=parseData(a.px),db=parseData(b.px);
+      if(!da) return 1; if(!db) return -1; return da-db;
+    }).map(a=>{
+      const atraso=diasAtraso(a.px);
+      return '<tr>'+
+      '<td>'+ncell(a)+'</td>'+
+      '<td style="color:var(--text-2);font-size:12px">'+a.pl+'</td>'+
+      '<td><span style="color:#C0392B;font-weight:600">'+a.px+'</span></td>'+
+      '<td><span class="bdg br">'+atraso+'d</span></td>'+
+      '<td style="font-weight:500">R$ '+a.v+'</td>'+
+      '<td><button class="btn btns btnb" onclick="abrirPagPilates(\''+esc(a.n)+'\','+(a.v||0)+')">✓</button></td>'+
+      '</tr>';
+    }).join('')+'</tbody></table></div>':'') +
+
+    // ── 2. PRÓXIMOS A VENCER ─────────────────────────────────
     (emDia.length?
     '<div style="font-size:11px;font-weight:600;color:#2D7A3A;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
     '<i class="ti ti-calendar-time"></i> Próximos vencimentos ('+emDia.length+')</div>'+
@@ -3128,41 +3158,51 @@ function renderPFin(at, pags){
     '<th>Aluno</th><th>Plano</th><th>Próx. venc.</th><th>Faltam</th><th>Valor</th>'+
     '</tr></thead><tbody>'+
     emDiaOrdenados.map(a=>{
-      const dias = diasAteVencer(a.px);
-      const urgente = dias<=5;
+      const dias=diasAteVencer(a.px);
+      const urgente=dias<=5;
       return '<tr>'+
       '<td>'+ncell(a)+'</td>'+
       '<td style="color:var(--text-2);font-size:12px">'+a.pl+'</td>'+
-      '<td><span style="color:'+(urgente?'var(--gold-dark)':'#2D7A3A')+';font-weight:600">'+( a.px||'—')+'</span></td>'+
+      '<td><span style="color:'+(urgente?'var(--gold-dark)':'#2D7A3A')+';font-weight:600">'+a.px+'</span></td>'+
       '<td><span class="bdg '+(urgente?'ba':'bg')+'">'+dias+'d</span></td>'+
       '<td style="color:var(--text-2)">R$ '+a.v+'</td>'+
       '</tr>';
     }).join('')+'</tbody></table></div>':'') +
 
-    // ── 2. PENDENTES / VENCIDOS ────────────────────────────────
-    '<div style="font-size:11px;font-weight:600;color:#C0392B;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
-    '<i class="ti ti-alert-circle"></i> Pendentes / Vencidos ('+pendentes.length+')</div>'+
+    // ── 3. PARCERIAS (sem pgto e sem vencimento) ──────────────
+    (semDadosPag.length?
+    '<div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
+    '<i class="ti ti-handshake"></i> Parcerias / sem controle de pagamento ('+semDadosPag.length+')</div>'+
     '<div class="tw" style="margin-bottom:18px"><table><thead><tr>'+
-    '<th>Aluno</th><th>Plano</th><th>Venceu em</th><th>Atraso</th><th>Valor</th><th></th>'+
+    '<th>Aluno</th><th>Plano</th><th>Valor</th><th></th>'+
     '</tr></thead><tbody>'+
-    (pendOrdenados.length?
-    pendOrdenados.map(a=>{
-      const atraso = diasAtraso(a.px);
-      return '<tr>'+
+    semDadosPag.map(a=>
+      '<tr>'+
       '<td>'+ncell(a)+'</td>'+
       '<td style="color:var(--text-2);font-size:12px">'+a.pl+'</td>'+
-      '<td><span style="color:#C0392B;font-weight:500">'+(a.px&&a.px!=='parceria'?a.px:'—')+'</span></td>'+
-      '<td>'+(atraso>0?'<span class="bdg br">'+atraso+'d</span>':a.px?'<span class="bdg ba">hoje</span>':'—')+'</td>'+
-      '<td style="font-weight:500">R$ '+a.v+'</td>'+
+      '<td style="color:var(--text-2)">R$ '+a.v+'</td>'+
       '<td><button class="btn btns btnb" onclick="abrirPagPilates(\''+esc(a.n)+'\','+(a.v||0)+')">✓</button></td>'+
-      '</tr>';
-    }).join(''):
-    '<tr><td colspan="6" style="text-align:center;padding:20px;color:#2D7A3A">'+
-    '<i class="ti ti-circle-check" style="font-size:18px;display:block;margin-bottom:4px"></i>'+
-    'Nenhum vencido!</td></tr>')+
-    '</tbody></table></div>'+
+      '</tr>'
+    ).join('')+'</tbody></table></div>':'') +
 
-    // ── 3. ÚLTIMOS PAGAMENTOS (por último) ─────────────────────
+    // ── 4. SEM PRÓX VENCIMENTO (pagou mas não tem próx) ──────
+    (semVencSoPg.length?
+    '<div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
+    '<i class="ti ti-calendar-x"></i> Sem próx. vencimento cadastrado ('+semVencSoPg.length+')</div>'+
+    '<div class="tw" style="margin-bottom:18px"><table><thead><tr>'+
+    '<th>Aluno</th><th>Plano</th><th>Último pgto</th><th>Valor</th><th></th>'+
+    '</tr></thead><tbody>'+
+    semVencSoPg.map(a=>
+      '<tr>'+
+      '<td>'+ncell(a)+'</td>'+
+      '<td style="color:var(--text-2);font-size:12px">'+a.pl+'</td>'+
+      '<td style="color:var(--text-2)">'+a.pg+'</td>'+
+      '<td style="color:var(--text-2)">R$ '+a.v+'</td>'+
+      '<td><button class="btn btns btnb" onclick="abrirPagPilates(\''+esc(a.n)+'\','+(a.v||0)+')">✓</button></td>'+
+      '</tr>'
+    ).join('')+'</tbody></table></div>':'') +
+
+    // ── 5. ÚLTIMOS PAGAMENTOS ─────────────────────────────────
     (pags&&pags.length?
     '<div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
     '<i class="ti ti-cash"></i> Últimos pagamentos</div>'+
