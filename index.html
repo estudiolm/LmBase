@@ -3062,11 +3062,16 @@ function renderPFin(at, pags){
   const mesStr   = String(mesAtual).padStart(2,'0');
   const anoStr   = String(anoAtual).slice(2);
 
-  // Converte prox_vencto dd/mm/aa → Date
+  // Converte prox_vencto — aceita dd/mm/aa E dd/mm/yyyy
   function parseData(s){
     if(!s||s==='parceria') return null;
-    const p=s.split('/'); if(p.length<3) return null;
-    return new Date('20'+p[2]+'-'+p[1]+'-'+p[0]);
+    const p=s.split('/');
+    if(p.length<3) return null;
+    const d=parseInt(p[0]), m=parseInt(p[1]);
+    // Ano: 2 dígitos (26 → 2026) ou 4 dígitos (2026)
+    const a = p[2].length===4 ? parseInt(p[2]) : parseInt('20'+p[2]);
+    if(isNaN(d)||isNaN(m)||isNaN(a)) return null;
+    return new Date(a, m-1, d);
   }
 
   // Pendente = próx vencimento <= hoje (já venceu ou vence hoje)
@@ -4053,50 +4058,61 @@ async function confirmarSessao(){
 
 // ── SALVAR VENDA NO BANCO ─────────────────────────────────
 async function confirmarVenda(){
-  const item=document.getElementById('vd_item').value.trim();
-  if(!item){ alert('Informe o item.'); return; }
-  const btn=document.getElementById('vd_btn'); btn.disabled=true; btn.textContent='Salvando…';
-  const preco=parseFloat(document.getElementById('vd_preco').value)||0;
-  const desc=parseFloat(document.getElementById('vd_desc').value)||0;
-  const vf=desc>0?preco*(1-desc/100):preco;
-  try {
-    await sbInsert('vendas',{
-      item,
-      marca:document.getElementById('vd_marca').value,
-      tamanho:document.getElementById('vd_tam').value||null,
-      custo:parseFloat(document.getElementById('vd_custo').value)||null,
-      preco:vf,
-      cliente:document.getElementById('vd_cliente').value||null,
-      data_venda:document.getElementById('vd_data').value||null,
-      forma_pgto:document.getElementById('vd_pgto').value||null,
-      codigo_barras:window._vendaCodigoBarras||null,
-      vendedor:document.getElementById('vd_vendedor')?.value||null,
-      participacao_vitoria:(()=>{
-        const vend = document.getElementById('vd_vendedor')?.value;
-        if(vend==='Vitoria') return 'atendeu';
-        const radio = document.querySelector('input[name="vd_vitpart"]:checked');
-        return (radio&&radio.value!=='nao') ? radio.value : 'nao';
-      })(),
-    });
+  const cart = window._carrinho||[];
+  if(!cart.length){ alert('Adicione pelo menos 1 item.'); return; }
 
-    // Dá baixa automática no estoque se tiver código de barras
-    if(window._vendaCodigoBarras){
-      try {
-        const r = await fetchWithTimeout(
-          `${SB_URL}/rest/v1/estoque?codigo_barras=eq.${encodeURIComponent(window._vendaCodigoBarras)}&limit=1`,
-          { headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY} }
-        );
-        const lista = await r.json();
-        if(lista[0] && lista[0].quantidade > 0){
-          await sbUpdate('estoque', lista[0].id, {quantidade: lista[0].quantidade - 1});
-        }
-      } catch(e){ console.warn('Baixa estoque:', e.message); }
+  const btn=document.getElementById('vd_btn');
+  btn.disabled=true; btn.textContent='Salvando…';
+
+  const cliente  = document.getElementById('vd_cliente').value||null;
+  const data     = document.getElementById('vd_data').value||null;
+  const pgto     = document.getElementById('vd_pgto').value||null;
+  const vendedor = document.getElementById('vd_vendedor')?.value||null;
+  const partVit  = (()=>{
+    if(vendedor==='Vitoria') return 'atendeu';
+    const radio = document.querySelector('input[name="vd_vitpart"]:checked');
+    return (radio&&radio.value!=='nao') ? radio.value : 'nao';
+  })();
+
+  try {
+    // Salva cada item como uma linha separada na tabela vendas
+    // mas todos com mesmo cliente/data/pgto (mesma "sessão de compra")
+    for(const v of cart){
+      await sbInsert('vendas',{
+        item:            v.item,
+        marca:           v.marca||null,
+        tamanho:         v.tam||null,
+        preco:           v.preco,
+        cliente,
+        data_venda:      data,
+        forma_pgto:      pgto,
+        vendedor,
+        participacao_vitoria: partVit,
+        codigo_barras:   v.codigo||null,
+      });
+
+      // Baixa no estoque se tiver código
+      if(v.codigo){
+        try {
+          const r = await fetchWithTimeout(
+            `${SB_URL}/rest/v1/estoque?codigo_barras=eq.${encodeURIComponent(v.codigo)}&limit=1`,
+            {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}}
+          );
+          const lista = await r.json();
+          if(lista[0]&&lista[0].quantidade>0){
+            await sbUpdate('estoque', lista[0].id, {quantidade: lista[0].quantidade-1});
+          }
+        } catch(e){ console.warn('Baixa estoque:', e.message); }
+      }
     }
 
-    await registrarLog('registrou venda', 'vendas', item+' — '+fR(vf)+' para '+(document.getElementById('vd_cliente').value||'—'));
+    const total = cart.reduce((s,v)=>s+v.preco,0);
+    const itens = cart.map(v=>v.item).join(', ');
+    await registrarLog('registrou venda','vendas',
+      cart.length+' item(ns): '+itens+' — '+fR(total)+' para '+(cliente||'—'));
     fecharModal();
     navLVendas();
-  } catch(e){ btn.disabled=false; btn.textContent='Registrar'; alert('Erro: '+e.message); }
+  } catch(e){ btn.disabled=false; btn.textContent='Finalizar venda'; alert('Erro: '+e.message); }
 }
 
 // ── SALVAR ENCOMENDA NO BANCO ─────────────────────────────
@@ -4175,50 +4191,171 @@ function abrirRegistrarSessao(nome){
 }
 
 function abrirNovaVenda(){
-  const hoje=new Date(); const dd=String(hoje.getDate()).padStart(2,'0'),mm=String(hoje.getMonth()+1).padStart(2,'0'),yy=hoje.getFullYear();
+  const hoje=new Date();
+  const dd=String(hoje.getDate()).padStart(2,'0');
+  const mm=String(hoje.getMonth()+1).padStart(2,'0');
+  const yy=hoje.getFullYear();
+  window._carrinho = []; // array de itens
   window._vendaCodigoBarras = null;
-  abrirModal('<div class="mdt">Nova venda</div>'+
 
-  // Campo código de barras
-  '<label class="fl">Código de barras (bipe ou digite)</label>'+
-  '<div class="barcode-box" id="vd_barcode_box">'+
-  '<i class="ti ti-barcode" style="color:var(--gold)"></i>'+
-  '<input type="text" id="vd_codigo_barras" placeholder="Bipe a peça ou digite o código…" '+
-  'onfocus="ativarBipVenda()" onblur="desativarLeitorCodigoBarras()" '+
-  'onkeydown="if(event.key===\'Enter\'){event.preventDefault();buscarPecaPorCodigo(this.value)}">'+
-  '</div>'+
-  '<div id="vd_codigo_result" style="margin-bottom:10px"></div>'+
+  abrirModal(
+    '<div class="mdt">Nova venda</div>'+
 
-  '<label class="fl">Item *</label><input class="fi" id="vd_item" placeholder="Ex: Macaquinho Honey Rosa Blush">'+
-  '<div class="fr2"><div><label class="fl">Marca</label><select class="fi" id="vd_marca"><option>Rosa Imperial</option><option>Camomila</option><option>Mnovo</option><option>Mantig</option><option>ALAD Amanda</option><option>Lm</option></select></div>'+
-  '<div><label class="fl">Tamanho</label><input class="fi" id="vd_tam" placeholder="P / M / G"></div></div>'+
-  '<div class="fr3"><div><label class="fl">Custo R$</label><input class="fi" id="vd_custo" type="number"></div>'+
-  '<div><label class="fl">Preço R$</label><input class="fi" id="vd_preco" type="number"></div>'+
-  '<div><label class="fl">Desconto %</label><input class="fi" id="vd_desc" type="number" placeholder="0"></div></div>'+
-  '<div class="fr2"><div><label class="fl">Cliente</label><input class="fi" id="vd_cliente" placeholder="Nome"></div>'+
-  '<div><label class="fl">Data</label><input class="fi" id="vd_data" type="date" value="'+yy+'-'+mm+'-'+dd+'"></div></div>'+
-  '<div class="fr2"><div><label class="fl">Forma pgto</label><select class="fi" id="vd_pgto"><option>PIX</option><option>Cartão débito</option><option>Cartão crédito 2x</option><option>Dinheiro</option><option>Link de pgto</option></select></div>'+
-  '<div><label class="fl">Quem atendeu</label><select class="fi" id="vd_vendedor">'+
-    '<option value="Larissa">Larissa (sem comissão Vitória)</option>'+
-    '<option value="Vitoria">Vitória (atendeu)</option>'+
-  '</select></div></div>'+
+    // ── DADOS GERAIS DA VENDA ─────────────────────────────────
+    '<div class="fr2">'+
+    '<div><label class="fl">Cliente</label><input class="fi" id="vd_cliente" placeholder="Nome do cliente"></div>'+
+    '<div><label class="fl">Data</label><input class="fi" id="vd_data" type="date" value="'+yy+'-'+mm+'-'+dd+'"></div>'+
+    '</div>'+
+    '<div class="fr2">'+
+    '<div><label class="fl">Forma pgto</label><select class="fi" id="vd_pgto">'+
+      '<option>PIX</option><option>Cartão débito</option><option>Cartão crédito 2x</option><option>Dinheiro</option><option>Link de pgto</option>'+
+    '</select></div>'+
+    '<div><label class="fl">Quem atendeu</label><select class="fi" id="vd_vendedor" onchange="toggleVitPart()">'+
+      '<option value="Larissa">Larissa</option>'+
+      '<option value="Vitoria">Vitória (atendeu)</option>'+
+    '</select></div>'+
+    '</div>'+
+    '<div id="vd_part_box" style="background:rgba(201,169,110,.08);border:1px solid rgba(201,169,110,.25);border-radius:var(--r-md);padding:10px 14px;margin-bottom:12px">'+
+    '<label class="fl" style="margin-bottom:6px">Vitória participou?</label>'+
+    '<div style="display:flex;gap:12px">'+
+    '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="vd_vitpart" value="nao" checked style="accent-color:var(--gold)"> Não</label>'+
+    '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="vd_vitpart" value="provador" style="accent-color:var(--gold)"> Provador/indicação (3%)</label>'+
+    '</div></div>'+
 
-  // Participação da Vitória — aparece só quando for Larissa
-  '<div id="vd_part_box" style="background:rgba(201,169,110,.08);border:1px solid rgba(201,169,110,.25);border-radius:var(--r-md);padding:12px 14px;margin-bottom:12px">'+
-  '<label class="fl" style="margin-bottom:8px">Vitória participou desta venda?</label>'+
-  '<div style="display:flex;gap:10px">'+
-  '<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:var(--text-1)">'+
-    '<input type="radio" name="vd_vitpart" value="nao" checked style="accent-color:var(--gold)"> Não — só Larissa</label>'+
-  '<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:13px;color:var(--text-1)">'+
-    '<input type="radio" name="vd_vitpart" value="provador" style="accent-color:var(--gold)"> Sim — provador/indicação (3%)</label>'+
-  '</div></div>'+
+    // ── ADICIONAR ITEM ─────────────────────────────────────────
+    '<div style="border:1px solid var(--border);border-radius:var(--r-md);padding:14px;margin-bottom:12px">'+
+    '<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Adicionar item</div>'+
 
-  '<script>document.getElementById("vd_vendedor").onchange=function(){'+
-    'var box=document.getElementById("vd_part_box");'+
-    'box.style.display=this.value==="Larissa"?"":"none";'+
-  '}; document.getElementById("vd_vendedor").onchange();<'+'/script>'+
+    '<div class="barcode-box" style="margin-bottom:10px">'+
+    '<i class="ti ti-barcode" style="color:var(--gold)"></i>'+
+    '<input type="text" id="vd_codigo_barras" placeholder="Bipe o código ou adicione manualmente…" '+
+    'onfocus="ativarBipVendaCarrinho()" onblur="desativarLeitorCodigoBarras()" '+
+    'onkeydown="if(event.key===\'Enter\'){event.preventDefault();buscarPecaCarrinho(this.value);this.value=\'\'}">'+
+    '</div>'+
+    '<div id="vd_codigo_result" style="margin-bottom:8px"></div>'+
 
-  '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btnp" id="vd_btn" onclick="confirmarVenda()">Registrar venda</button></div>');
+    '<input class="fi" id="vd_item" placeholder="Nome do item *" style="margin-bottom:8px">'+
+    '<div class="fr3">'+
+    '<div><select class="fi" id="vd_marca" style="margin-bottom:8px"><option value="">— Marca —</option><option>Rosa Imperial</option><option>Camomila</option><option>Mnovo</option><option>Mantig</option><option>ALAD Amanda</option><option>Lm</option></select></div>'+
+    '<div><input class="fi" id="vd_tam" placeholder="Tamanho" style="margin-bottom:8px"></div>'+
+    '<div><input class="fi" id="vd_preco" type="number" placeholder="Preço R$" style="margin-bottom:8px"></div>'+
+    '</div>'+
+    '<button class="btn btne" style="width:100%;justify-content:center" onclick="adicionarAoCarrinho()"><i class="ti ti-plus"></i> Adicionar item</button>'+
+    '</div>'+
+
+    // ── CARRINHO ───────────────────────────────────────────────
+    '<div id="vd_carrinho_box"></div>'+
+
+    '<div class="mdf">'+
+    '<button class="btn" onclick="fecharModal()">Cancelar</button>'+
+    '<button class="btn btnp" id="vd_btn" onclick="confirmarVenda()"><i class="ti ti-check"></i> Finalizar venda</button>'+
+    '</div>'
+  );
+
+  renderCarrinho();
+  toggleVitPart();
+}
+
+function toggleVitPart(){
+  const v = document.getElementById('vd_vendedor')?.value;
+  const box = document.getElementById('vd_part_box');
+  if(box) box.style.display = v==='Larissa' ? '' : 'none';
+}
+
+function ativarBipVendaCarrinho(){
+  ativarLeitorCodigoBarras(async(codigo)=>{
+    const input = document.getElementById('vd_codigo_barras');
+    if(input) input.value='';
+    await buscarPecaCarrinho(codigo);
+  });
+}
+
+async function buscarPecaCarrinho(codigo){
+  if(!codigo||!codigo.trim()) return;
+  codigo = codigo.trim();
+  const res = document.getElementById('vd_codigo_result');
+  try {
+    const r = await fetchWithTimeout(
+      `${SB_URL}/rest/v1/estoque?codigo_barras=eq.${encodeURIComponent(codigo)}&limit=1`,
+      {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}}
+    );
+    const lista = await r.json();
+    if(lista[0]){
+      const p = lista[0];
+      // Preenche campos automaticamente
+      document.getElementById('vd_item').value = p.item||'';
+      if(p.marca){
+        const sel = document.getElementById('vd_marca');
+        for(let o of sel.options) if(o.value===p.marca){o.selected=true;break;}
+      }
+      if(p.preco) document.getElementById('vd_preco').value = p.preco;
+      if(res) res.innerHTML = `<div style="font-size:11px;background:rgba(45,122,58,.08);border:1px solid rgba(45,122,58,.2);border-radius:6px;padding:5px 10px;color:#2D7A3A">✓ ${p.item} — estoque: ${p.quantidade||0} un.</div>`;
+      window._vendaCodigoBarras = codigo;
+      window._vendaPecaId = p.id;
+    } else {
+      if(res) res.innerHTML = `<div style="font-size:11px;color:#C0392B">Código não encontrado — preencha manualmente.</div>`;
+    }
+  } catch(e){}
+}
+
+function adicionarAoCarrinho(){
+  const item  = document.getElementById('vd_item').value.trim();
+  if(!item){ alert('Informe o nome do item.'); return; }
+  const marca  = document.getElementById('vd_marca').value||null;
+  const tam    = document.getElementById('vd_tam').value||null;
+  const preco  = parseFloat(document.getElementById('vd_preco').value)||0;
+  const codigo = window._vendaCodigoBarras||null;
+  const pecaId = window._vendaPecaId||null;
+
+  window._carrinho.push({item, marca, tam, preco, codigo, pecaId});
+
+  // Limpa campos do item
+  document.getElementById('vd_item').value='';
+  document.getElementById('vd_tam').value='';
+  document.getElementById('vd_preco').value='';
+  document.getElementById('vd_marca').selectedIndex=0;
+  document.getElementById('vd_codigo_barras').value='';
+  document.getElementById('vd_codigo_result').innerHTML='';
+  window._vendaCodigoBarras=null;
+  window._vendaPecaId=null;
+
+  renderCarrinho();
+  document.getElementById('vd_codigo_barras').focus();
+}
+
+function renderCarrinho(){
+  const box = document.getElementById('vd_carrinho_box');
+  if(!box) return;
+  const cart = window._carrinho||[];
+  const total = cart.reduce((s,v)=>s+v.preco,0);
+
+  if(!cart.length){
+    box.innerHTML = '<div style="text-align:center;padding:14px;color:var(--text-3);font-size:12px;border:1px dashed var(--border);border-radius:var(--r-md);margin-bottom:12px">Nenhum item adicionado ainda</div>';
+    return;
+  }
+
+  box.innerHTML =
+    '<div style="border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;margin-bottom:12px">'+
+    '<div style="padding:10px 14px;background:var(--bg);font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;display:flex;justify-content:space-between">'+
+    '<span><i class="ti ti-shopping-cart"></i> Itens ('+cart.length+')</span>'+
+    '<span style="color:var(--gold-dark)">Total: '+fR(total)+'</span>'+
+    '</div>'+
+    cart.map((v,i)=>
+      '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--border)">'+
+      '<div style="flex:1;min-width:0">'+
+      '<div style="font-size:13px;font-weight:500;color:var(--text-1)">'+v.item+'</div>'+
+      '<div style="font-size:11px;color:var(--text-3)">'+(v.marca||'')+(v.tam?' · '+v.tam:'')+'</div>'+
+      '</div>'+
+      '<div style="font-size:13px;font-weight:600;color:var(--gold-dark)">'+fR(v.preco)+'</div>'+
+      '<button onclick="removerDoCarrinho('+i+')" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:16px;padding:4px;border-radius:6px" title="Remover">×</button>'+
+      '</div>'
+    ).join('')+
+    '</div>';
+}
+
+function removerDoCarrinho(idx){
+  window._carrinho.splice(idx,1);
+  renderCarrinho();
 }
 
 function abrirNovaPeca(){
