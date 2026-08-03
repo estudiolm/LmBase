@@ -2332,19 +2332,22 @@ function renderPonto(registros, isAdmin, usuarioLogado){
 
   function calcMin(regs){
     const s=[...regs].sort((a,b)=>new Date(a.horario)-new Date(b.horario));
-    let entrada=null,pausaIni=null,min=0;
+    let entrada=null, pausaIni=null, totalMin=0;
     s.forEach(r=>{
-      if(r.tipo==='entrada') entrada=new Date(r.horario);
-      else if(r.tipo==='inicio_pausa'&&entrada) pausaIni=new Date(r.horario);
-      else if(r.tipo==='fim_pausa') pausaIni=null;
-      else if(r.tipo==='saida'&&entrada){
-        const total=(new Date(r.horario)-entrada)/60000;
-        const pausa=pausaIni?(new Date(r.horario)-pausaIni)/60000:0;
-        min+=total-pausa; entrada=null;
+      if(r.tipo==='entrada'){
+        entrada=new Date(r.horario);
+      } else if(r.tipo==='inicio_pausa' && entrada){
+        totalMin += (new Date(r.horario)-entrada)/60000;
+        entrada=null; pausaIni=new Date(r.horario);
+      } else if(r.tipo==='fim_pausa'){
+        entrada=new Date(r.horario); pausaIni=null;
+      } else if(r.tipo==='saida' && entrada){
+        totalMin += (new Date(r.horario)-entrada)/60000;
+        entrada=null;
       }
     });
-    if(entrada&&!pausaIni) min+=(new Date()-entrada)/60000;
-    return Math.max(0,Math.round(min));
+    if(entrada) totalMin += (new Date()-entrada)/60000;
+    return Math.max(0,Math.round(totalMin));
   }
 
   // Determina próximo tipo para o usuário logado
@@ -2577,18 +2580,28 @@ function consolidadoPontoMes(registros){
 
   function calcMinDia(regs){
     const s=[...regs].sort((a,b)=>new Date(a.horario)-new Date(b.horario));
-    let entrada=null,pausaIni=null,min=0;
+    let entrada=null, pausaIni=null, totalMin=0;
     s.forEach(r=>{
-      if(r.tipo==='entrada') entrada=new Date(r.horario);
-      else if(r.tipo==='inicio_pausa'&&entrada) pausaIni=new Date(r.horario);
-      else if(r.tipo==='fim_pausa') pausaIni=null;
-      else if(r.tipo==='saida'&&entrada){
-        const total=(new Date(r.horario)-entrada)/60000;
-        const pausa=pausaIni?(new Date(r.horario)-pausaIni)/60000:0;
-        min+=total-pausa; entrada=null;
+      if(r.tipo==='entrada'){
+        entrada=new Date(r.horario);
+      } else if(r.tipo==='inicio_pausa' && entrada){
+        // Acumula tempo até início da pausa
+        totalMin += (new Date(r.horario)-entrada)/60000;
+        entrada=null;
+        pausaIni=new Date(r.horario);
+      } else if(r.tipo==='fim_pausa'){
+        // Retoma contagem a partir do fim da pausa
+        entrada=new Date(r.horario);
+        pausaIni=null;
+      } else if(r.tipo==='saida' && entrada){
+        // Acumula tempo do fim da pausa (ou entrada) até saída
+        totalMin += (new Date(r.horario)-entrada)/60000;
+        entrada=null;
       }
     });
-    return Math.max(0,Math.round(min));
+    // Se ainda está trabalhando (sem saída registrada) conta até agora
+    if(entrada) totalMin += (new Date()-entrada)/60000;
+    return Math.max(0, Math.round(totalMin));
   }
 
   const totalMinTrab = Object.values(porDia).reduce((s,regs)=>s+calcMinDia(regs),0);
