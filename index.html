@@ -2334,24 +2334,10 @@ function renderPonto(registros, isAdmin, usuarioLogado){
     const s=[...regs].sort((a,b)=>new Date(a.horario)-new Date(b.horario));
     const entrada = s.find(r=>r.tipo==='entrada');
     const saida   = s.find(r=>r.tipo==='saida');
-    // Se não tem saída, calcula até agora (apenas para mostrar progresso do dia atual)
-    const fimRef  = saida ? new Date(saida.horario) : new Date();
+    // Pausa é dentro da jornada — só conta saída - entrada (ou agora se em andamento)
     if(!entrada) return 0;
-
-    let totalMin=0, cur=new Date(entrada.horario);
-    s.forEach(r=>{
-      if(r.tipo==='inicio_pausa' && cur){
-        totalMin += (new Date(r.horario)-cur)/60000;
-        cur=null;
-      } else if(r.tipo==='fim_pausa'){
-        cur=new Date(r.horario);
-      } else if(r.tipo==='saida' && cur){
-        totalMin += (new Date(r.horario)-cur)/60000;
-        cur=null;
-      }
-    });
-    // Se ainda trabalhando (sem saída), conta até agora
-    if(cur && !saida) totalMin += (fimRef-cur)/60000;
+    const fim = saida ? new Date(saida.horario) : new Date();
+    const totalMin = (fim - new Date(entrada.horario))/60000;
     return Math.max(0,Math.round(totalMin));
   }
 
@@ -2585,24 +2571,11 @@ function consolidadoPontoMes(registros){
 
   function calcMinDia(regs){
     const s=[...regs].sort((a,b)=>new Date(a.horario)-new Date(b.horario));
-    // Só conta se tem entrada E saída — dia incompleto não entra no total
     const entrada = s.find(r=>r.tipo==='entrada');
     const saida   = s.find(r=>r.tipo==='saida');
-    if(!entrada || !saida) return 0;
-
-    let totalMin=0, cur=new Date(entrada.horario);
-    s.forEach(r=>{
-      if(r.tipo==='inicio_pausa' && cur){
-        totalMin += (new Date(r.horario)-cur)/60000;
-        cur=null;
-      } else if(r.tipo==='fim_pausa'){
-        cur=new Date(r.horario);
-      } else if(r.tipo==='saida' && cur){
-        totalMin += (new Date(r.horario)-cur)/60000;
-        cur=null;
-      }
-    });
-    return Math.max(0, Math.round(totalMin));
+    // Pausa é dentro da jornada — só conta saída - entrada
+    if(!entrada||!saida) return 0;
+    return Math.max(0, Math.round((new Date(saida.horario)-new Date(entrada.horario))/60000));
   }
 
   const totalMinTrab = Object.values(porDia).reduce((s,regs)=>s+calcMinDia(regs),0);
