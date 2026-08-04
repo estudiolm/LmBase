@@ -3477,12 +3477,10 @@ async function navFPacientes(){
     sessRows.forEach(s=>{
       if(!datasMap[s.paciente_id]) datasMap[s.paciente_id]=[];
       if(s.data_sessao){
-        const d = new Date(s.data_sessao);
-        datasMap[s.paciente_id].push(
-          String(d.getDate()).padStart(2,'0')+'/'+
-          String(d.getMonth()+1).padStart(2,'0')+'/'+
-          String(d.getFullYear()).slice(2)
-        );
+        // Parseia diretamente sem new Date() para evitar problema de timezone
+        const iso = String(s.data_sessao).split('T')[0];
+        const [y,m,d] = iso.split('-');
+        datasMap[s.paciente_id].push(d+'/'+m+'/'+y.slice(2));
       }
     });
 
@@ -4207,14 +4205,17 @@ async function confirmarSessao(){
       return d+'/'+m+'/'+y.slice(2);
     })() : null;
 
-    // Busca datas já registradas
+    // Busca datas já registradas — parseia sem timezone
     const sesoesAntigas = await sbGet('sessoes_fisio','id');
     const datasList = sesoesAntigas
       .filter(s=>s.paciente_id===pac.id)
-      .map(s=>s.data_sessao ? (()=>{
-        const d = new Date(s.data_sessao);
-        return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getFullYear()).slice(2);
-      })() : '—')
+      .map(s=>{
+        if(!s.data_sessao) return '—';
+        // Parseia diretamente do ISO sem usar new Date() para evitar timezone
+        const iso = String(s.data_sessao).split('T')[0]; // pega só 2026-07-22
+        const [y,m,d] = iso.split('-');
+        return d+'/'+m+'/'+y.slice(2);
+      })
       .concat(dataFmt||'—');
 
     // Registra sessão
@@ -5043,7 +5044,7 @@ async function rFinGeral(){
     ? pacientesBanco.map(r=>({n:r.nome,sessoes:r.sessoes_contratadas,realizadas:r.sessoes_realizadas||0,status:r.status}))
     : (window._fisioCache||FISIO);
 
-  const PRECO_SESSAO = 120;
+  const PRECO_SESSAO = 145;
   const totalSessoes  = fisioBase.reduce((s,p)=>s+(p.realizadas||0),0);
   const recFisio      = totalSessoes * PRECO_SESSAO;
   const pacAtivos     = fisioBase.filter(p=>p.status!=='alta').length;
@@ -5187,7 +5188,7 @@ async function rFinGeral(){
   blocoComissaoVitoria(todasVendas)+
 
   // ── CONSOLIDADO MENSAL ─────────────────────────────────────
-  blocoMensalConsolidado(pagsBanco, todasVendas)
+  blocoMensalConsolidado(pagsBanco, todasVendas, await sbGet('sessoes_fisio','data_sessao').catch(()=>[]))
   );
 }
 
@@ -5276,26 +5277,24 @@ function blocoComissaoVitoria(todasVendas){
   '</div></div>';
 }
 
-function blocoMensalConsolidado(pagamentos, vendas){
+function blocoMensalConsolidado(pagamentos, vendas, sessoesFisio){
   const agora = new Date();
   const nomesMes = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const PRECO_SESSAO_FISIO = 145;
 
   function parseMesAno(data){
     if(!data||data==='—'||data==='null'||data===null) return null;
     const s=String(data);
-    // ISO: 2026-07-22
     if(s.match(/^\d{4}-\d{2}/)){
       const [y,m]=s.split('-');
       return String(parseInt(m)).padStart(2,'0')+'/'+y;
     }
-    // dd/mm/aa ou dd/mm/yyyy
     const p=s.split('/');
     if(p.length<3) return null;
-    const ano = p[2].length===4?p[2]:'20'+p[2];
+    const ano=p[2].length===4?p[2]:'20'+p[2];
     return p[1].padStart(2,'0')+'/'+ano;
   }
 
-  // Agrupa tudo por mês
   const porMes={};
   const addMes=(key)=>{ if(!porMes[key]) porMes[key]={pilates:0,qtdPilates:0,loja:0,qtdLoja:0,fisio:0,qtdFisio:0}; };
 
@@ -5313,39 +5312,39 @@ function blocoMensalConsolidado(pagamentos, vendas){
     porMes[key].qtdLoja++;
   });
 
-  const meses = Object.entries(porMes).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,12);
+  // Sessões de fisioterapia por mês
+  (sessoesFisio||[]).forEach(s=>{
+    const key=parseMesAno(s.data_sessao); if(!key) return;
+    addMes(key);
+    porMes[key].fisio += PRECO_SESSAO_FISIO;
+    porMes[key].qtdFisio++;
+  });
+
+  const meses=Object.entries(porMes).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,12);
   if(!meses.length) return '';
 
-  const mesAtualKey = String(agora.getMonth()+1).padStart(2,'0')+'/'+agora.getFullYear();
-
-  // Totais gerais
-  const totalPilates = meses.reduce((s,[,d])=>s+d.pilates,0);
-  const totalLoja    = meses.reduce((s,[,d])=>s+d.loja,0);
-  const totalGeral   = totalPilates + totalLoja;
+  const mesAtualKey=String(agora.getMonth()+1).padStart(2,'0')+'/'+agora.getFullYear();
+  const totalPilates=meses.reduce((s,[,d])=>s+d.pilates,0);
+  const totalFisio  =meses.reduce((s,[,d])=>s+d.fisio,0);
+  const totalLoja   =meses.reduce((s,[,d])=>s+d.loja,0);
+  const totalGeral  =totalPilates+totalFisio+totalLoja;
 
   return '<div style="font-size:11px;font-weight:700;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.08em;margin:24px 0 10px">'+
   '<i class="ti ti-calendar-stats"></i> Consolidado mensal — Receitas</div>'+
 
-  // Cards totais
   '<div class="metrics3" style="margin-bottom:14px">'+
-  mc('Total acumulado','vg',fR(totalGeral),meses.length+' meses registrados')+
-  mc('Pilates (total)','va',fR(totalPilates),meses.reduce((s,[,d])=>s+d.qtdPilates,0)+' pagamentos')+
-  mc('Loja (total)','vp',fR(totalLoja),meses.reduce((s,[,d])=>s+d.qtdLoja,0)+' vendas')+
+  mc('Total acumulado','vg',fR(totalGeral),meses.length+' meses')+
+  mc('Pilates','va',fR(totalPilates),meses.reduce((s,[,d])=>s+d.qtdPilates,0)+' pgtos')+
+  mc('Fisio + Loja','vp',fR(totalFisio+totalLoja),meses.reduce((s,[,d])=>s+d.qtdFisio+d.qtdLoja,0)+' itens')+
   '</div>'+
 
   '<div class="tw"><table><thead><tr>'+
-  '<th>Mês</th>'+
-  '<th>Pilates</th>'+
-  '<th>Loja</th>'+
-  '<th style="font-weight:700">Total</th>'+
-  '<th></th>'+
+  '<th>Mês</th><th>Pilates</th><th>Fisioterapia</th><th>Loja</th><th style="font-weight:700">Total</th><th></th>'+
   '</tr></thead><tbody>'+
   meses.map(([key,d])=>{
     const [mm,yyyy]=key.split('/');
     const isAtual=key===mesAtualKey;
-    const total=(d.pilates)+(d.loja);
-    const pctPilates=total>0?Math.round(d.pilates/total*100):0;
-    const pctLoja=total>0?Math.round(d.loja/total*100):0;
+    const total=d.pilates+d.fisio+d.loja;
     return '<tr style="'+(isAtual?'background:rgba(201,169,110,.05)':'')+'">'+
     '<td style="font-weight:'+(isAtual?700:500)+';white-space:nowrap">'+
       nomesMes[parseInt(mm)]+' '+yyyy+
@@ -5353,31 +5352,34 @@ function blocoMensalConsolidado(pagamentos, vendas){
     '</td>'+
     '<td>'+
       '<div style="font-weight:600;color:var(--gold-dark)">'+fR(d.pilates)+'</div>'+
-      '<div style="font-size:10px;color:var(--text-3)">'+d.qtdPilates+' pgtos · '+pctPilates+'%</div>'+
-      '<div style="height:3px;border-radius:2px;background:var(--bg-2);margin-top:3px;width:80px">'+
-      '<div style="width:'+pctPilates+'%;height:100%;border-radius:2px;background:var(--gold)"></div></div>'+
+      '<div style="font-size:10px;color:var(--text-3)">'+d.qtdPilates+' pgtos</div>'+
     '</td>'+
     '<td>'+
-      '<div style="font-weight:600;color:var(--brown-mid)">'+fR(d.loja)+'</div>'+
-      (d.qtdLoja?'<div style="font-size:10px;color:var(--text-3)">'+d.qtdLoja+' vendas · '+pctLoja+'%</div>':'')+
-      (d.qtdLoja?'<div style="height:3px;border-radius:2px;background:var(--bg-2);margin-top:3px;width:80px">'+
-      '<div style="width:'+pctLoja+'%;height:100%;border-radius:2px;background:#8B4A8B"></div></div>':'')+
+      (d.fisio>0?
+        '<div style="font-weight:600;color:#3D7A3A">'+fR(d.fisio)+'</div>'+
+        '<div style="font-size:10px;color:var(--text-3)">'+d.qtdFisio+' sessões</div>'
+      :'<span style="color:var(--text-3)">—</span>')+
+    '</td>'+
+    '<td>'+
+      (d.loja>0?
+        '<div style="font-weight:600;color:var(--brown-mid)">'+fR(d.loja)+'</div>'+
+        '<div style="font-size:10px;color:var(--text-3)">'+d.qtdLoja+' vendas</div>'
+      :'<span style="color:var(--text-3)">—</span>')+
     '</td>'+
     '<td style="font-weight:700;color:var(--text-1);font-size:14px">'+fR(total)+'</td>'+
     '<td style="font-size:10px;color:var(--text-3)">'+(isAtual?'parcial':'')+'</td>'+
     '</tr>';
   }).join('')+
-  // Linha de total
   '<tr class="sum-row">'+
   '<td style="font-weight:700">Total geral</td>'+
   '<td style="font-weight:700;color:var(--gold-dark)">'+fR(totalPilates)+'</td>'+
+  '<td style="font-weight:700;color:#3D7A3A">'+fR(totalFisio)+'</td>'+
   '<td style="font-weight:700;color:var(--brown-mid)">'+fR(totalLoja)+'</td>'+
   '<td style="font-weight:700;color:var(--text-1);font-size:14px">'+fR(totalGeral)+'</td>'+
   '<td></td>'+
   '</tr>'+
   '</tbody></table></div>';
 }
-
 // ═══════════════════════════════════════════════════════════
 // HISTÓRICO DE ALTERAÇÕES
 // ═══════════════════════════════════════════════════════════
