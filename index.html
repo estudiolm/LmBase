@@ -2332,21 +2332,26 @@ function renderPonto(registros, isAdmin, usuarioLogado){
 
   function calcMin(regs){
     const s=[...regs].sort((a,b)=>new Date(a.horario)-new Date(b.horario));
-    let entrada=null, pausaIni=null, totalMin=0;
+    const entrada = s.find(r=>r.tipo==='entrada');
+    const saida   = s.find(r=>r.tipo==='saida');
+    // Se não tem saída, calcula até agora (apenas para mostrar progresso do dia atual)
+    const fimRef  = saida ? new Date(saida.horario) : new Date();
+    if(!entrada) return 0;
+
+    let totalMin=0, cur=new Date(entrada.horario);
     s.forEach(r=>{
-      if(r.tipo==='entrada'){
-        entrada=new Date(r.horario);
-      } else if(r.tipo==='inicio_pausa' && entrada){
-        totalMin += (new Date(r.horario)-entrada)/60000;
-        entrada=null; pausaIni=new Date(r.horario);
+      if(r.tipo==='inicio_pausa' && cur){
+        totalMin += (new Date(r.horario)-cur)/60000;
+        cur=null;
       } else if(r.tipo==='fim_pausa'){
-        entrada=new Date(r.horario); pausaIni=null;
-      } else if(r.tipo==='saida' && entrada){
-        totalMin += (new Date(r.horario)-entrada)/60000;
-        entrada=null;
+        cur=new Date(r.horario);
+      } else if(r.tipo==='saida' && cur){
+        totalMin += (new Date(r.horario)-cur)/60000;
+        cur=null;
       }
     });
-    if(entrada) totalMin += (new Date()-entrada)/60000;
+    // Se ainda trabalhando (sem saída), conta até agora
+    if(cur && !saida) totalMin += (fimRef-cur)/60000;
     return Math.max(0,Math.round(totalMin));
   }
 
@@ -2580,27 +2585,23 @@ function consolidadoPontoMes(registros){
 
   function calcMinDia(regs){
     const s=[...regs].sort((a,b)=>new Date(a.horario)-new Date(b.horario));
-    let entrada=null, pausaIni=null, totalMin=0;
+    // Só conta se tem entrada E saída — dia incompleto não entra no total
+    const entrada = s.find(r=>r.tipo==='entrada');
+    const saida   = s.find(r=>r.tipo==='saida');
+    if(!entrada || !saida) return 0;
+
+    let totalMin=0, cur=new Date(entrada.horario);
     s.forEach(r=>{
-      if(r.tipo==='entrada'){
-        entrada=new Date(r.horario);
-      } else if(r.tipo==='inicio_pausa' && entrada){
-        // Acumula tempo até início da pausa
-        totalMin += (new Date(r.horario)-entrada)/60000;
-        entrada=null;
-        pausaIni=new Date(r.horario);
+      if(r.tipo==='inicio_pausa' && cur){
+        totalMin += (new Date(r.horario)-cur)/60000;
+        cur=null;
       } else if(r.tipo==='fim_pausa'){
-        // Retoma contagem a partir do fim da pausa
-        entrada=new Date(r.horario);
-        pausaIni=null;
-      } else if(r.tipo==='saida' && entrada){
-        // Acumula tempo do fim da pausa (ou entrada) até saída
-        totalMin += (new Date(r.horario)-entrada)/60000;
-        entrada=null;
+        cur=new Date(r.horario);
+      } else if(r.tipo==='saida' && cur){
+        totalMin += (new Date(r.horario)-cur)/60000;
+        cur=null;
       }
     });
-    // Se ainda está trabalhando (sem saída registrada) conta até agora
-    if(entrada) totalMin += (new Date()-entrada)/60000;
     return Math.max(0, Math.round(totalMin));
   }
 
@@ -5279,58 +5280,101 @@ function blocoMensalConsolidado(pagamentos, vendas){
   const agora = new Date();
   const nomesMes = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
-  // Agrupa pagamentos de pilates por mês
-  const pgtosMes = {};
+  function parseMesAno(data){
+    if(!data||data==='—'||data==='null'||data===null) return null;
+    const s=String(data);
+    // ISO: 2026-07-22
+    if(s.match(/^\d{4}-\d{2}/)){
+      const [y,m]=s.split('-');
+      return String(parseInt(m)).padStart(2,'0')+'/'+y;
+    }
+    // dd/mm/aa ou dd/mm/yyyy
+    const p=s.split('/');
+    if(p.length<3) return null;
+    const ano = p[2].length===4?p[2]:'20'+p[2];
+    return p[1].padStart(2,'0')+'/'+ano;
+  }
+
+  // Agrupa tudo por mês
+  const porMes={};
+  const addMes=(key)=>{ if(!porMes[key]) porMes[key]={pilates:0,qtdPilates:0,loja:0,qtdLoja:0,fisio:0,qtdFisio:0}; };
+
   pagamentos.forEach(p=>{
-    if(!p.data_pgto) return;
-    const pts = p.data_pgto.split('/');
-    if(pts.length<3) return;
-    const key = pts[1]+'/20'+pts[2]; // mm/yyyy
-    if(!pgtosMes[key]) pgtosMes[key]={pilates:0,qtdPilates:0};
-    pgtosMes[key].pilates += parseFloat(p.valor)||0;
-    pgtosMes[key].qtdPilates++;
+    const key=parseMesAno(p.data_pgto); if(!key) return;
+    addMes(key);
+    porMes[key].pilates += parseFloat(p.valor)||0;
+    porMes[key].qtdPilates++;
   });
 
-  // Agrupa vendas por mês
   vendas.forEach(v=>{
-    if(!v.data||v.data==='—') return;
-    const pts = v.data.split('/');
-    if(pts.length<3) return;
-    const key = pts[1]+'/20'+pts[2];
-    if(!pgtosMes[key]) pgtosMes[key]={pilates:0,qtdPilates:0};
-    pgtosMes[key].loja = (pgtosMes[key].loja||0) + (parseFloat(v.preco)||0);
-    pgtosMes[key].qtdLoja = (pgtosMes[key].qtdLoja||0)+1;
+    const key=parseMesAno(v.data); if(!key) return;
+    addMes(key);
+    porMes[key].loja += parseFloat(v.preco)||0;
+    porMes[key].qtdLoja++;
   });
 
-  const meses = Object.entries(pgtosMes).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,6);
+  const meses = Object.entries(porMes).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,12);
   if(!meses.length) return '';
 
   const mesAtualKey = String(agora.getMonth()+1).padStart(2,'0')+'/'+agora.getFullYear();
 
-  return '<div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em;margin:20px 0 10px">'+
-  '<i class="ti ti-calendar-stats"></i> Consolidado mensal</div>'+
+  // Totais gerais
+  const totalPilates = meses.reduce((s,[,d])=>s+d.pilates,0);
+  const totalLoja    = meses.reduce((s,[,d])=>s+d.loja,0);
+  const totalGeral   = totalPilates + totalLoja;
+
+  return '<div style="font-size:11px;font-weight:700;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.08em;margin:24px 0 10px">'+
+  '<i class="ti ti-calendar-stats"></i> Consolidado mensal — Receitas</div>'+
+
+  // Cards totais
+  '<div class="metrics3" style="margin-bottom:14px">'+
+  mc('Total acumulado','vg',fR(totalGeral),meses.length+' meses registrados')+
+  mc('Pilates (total)','va',fR(totalPilates),meses.reduce((s,[,d])=>s+d.qtdPilates,0)+' pagamentos')+
+  mc('Loja (total)','vp',fR(totalLoja),meses.reduce((s,[,d])=>s+d.qtdLoja,0)+' vendas')+
+  '</div>'+
+
   '<div class="tw"><table><thead><tr>'+
-  '<th>Mês</th><th>Pilates recebido</th><th>Loja</th><th>Total</th><th></th>'+
+  '<th>Mês</th>'+
+  '<th>Pilates</th>'+
+  '<th>Loja</th>'+
+  '<th style="font-weight:700">Total</th>'+
+  '<th></th>'+
   '</tr></thead><tbody>'+
   meses.map(([key,d])=>{
-    const [mm,yyyy] = key.split('/');
-    const isAtual = key===mesAtualKey;
-    const total = (d.pilates||0)+(d.loja||0);
-    return '<tr style="'+(isAtual?'background:rgba(201,169,110,.06)':'')+'">'+
-    '<td style="font-weight:'+(isAtual?'700':'500')+'">'+
+    const [mm,yyyy]=key.split('/');
+    const isAtual=key===mesAtualKey;
+    const total=(d.pilates)+(d.loja);
+    const pctPilates=total>0?Math.round(d.pilates/total*100):0;
+    const pctLoja=total>0?Math.round(d.loja/total*100):0;
+    return '<tr style="'+(isAtual?'background:rgba(201,169,110,.05)':'')+'">'+
+    '<td style="font-weight:'+(isAtual?700:500)+';white-space:nowrap">'+
       nomesMes[parseInt(mm)]+' '+yyyy+
-      (isAtual?' <span style="font-size:10px;color:var(--gold-dark)">● atual</span>':'')+
+      (isAtual?' <span class="bdg ba" style="font-size:9px">atual</span>':'')+
     '</td>'+
-    '<td style="color:var(--gold-dark)">'+fR(d.pilates||0)+
-      '<span style="font-size:10px;color:var(--brown-light);margin-left:4px">'+( d.qtdPilates||0)+' pgtos</span>'+
+    '<td>'+
+      '<div style="font-weight:600;color:var(--gold-dark)">'+fR(d.pilates)+'</div>'+
+      '<div style="font-size:10px;color:var(--text-3)">'+d.qtdPilates+' pgtos · '+pctPilates+'%</div>'+
+      '<div style="height:3px;border-radius:2px;background:var(--bg-2);margin-top:3px;width:80px">'+
+      '<div style="width:'+pctPilates+'%;height:100%;border-radius:2px;background:var(--gold)"></div></div>'+
     '</td>'+
-    '<td style="color:var(--brown-mid)">'+fR(d.loja||0)+
-      (d.qtdLoja?'<span style="font-size:10px;color:var(--brown-light);margin-left:4px">'+d.qtdLoja+' vendas</span>':'')+
+    '<td>'+
+      '<div style="font-weight:600;color:var(--brown-mid)">'+fR(d.loja)+'</div>'+
+      (d.qtdLoja?'<div style="font-size:10px;color:var(--text-3)">'+d.qtdLoja+' vendas · '+pctLoja+'%</div>':'')+
+      (d.qtdLoja?'<div style="height:3px;border-radius:2px;background:var(--bg-2);margin-top:3px;width:80px">'+
+      '<div style="width:'+pctLoja+'%;height:100%;border-radius:2px;background:#8B4A8B"></div></div>':'')+
     '</td>'+
-    '<td style="font-weight:700;color:var(--brown)">'+fR(total)+'</td>'+
-    '<td style="font-size:11px;color:var(--brown-light)">'+(isAtual?'parcial':'')+'</td>'+
+    '<td style="font-weight:700;color:var(--text-1);font-size:14px">'+fR(total)+'</td>'+
+    '<td style="font-size:10px;color:var(--text-3)">'+(isAtual?'parcial':'')+'</td>'+
     '</tr>';
   }).join('')+
+  // Linha de total
+  '<tr class="sum-row">'+
+  '<td style="font-weight:700">Total geral</td>'+
+  '<td style="font-weight:700;color:var(--gold-dark)">'+fR(totalPilates)+'</td>'+
+  '<td style="font-weight:700;color:var(--brown-mid)">'+fR(totalLoja)+'</td>'+
+  '<td style="font-weight:700;color:var(--text-1);font-size:14px">'+fR(totalGeral)+'</td>'+
+  '<td></td>'+
+  '</tr>'+
   '</tbody></table></div>';
 }
 
