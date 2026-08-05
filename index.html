@@ -2692,7 +2692,10 @@ function consolidadoPontoMes(registros){
 async function rHome(){
   const permH = usuarioAtual ? (PERMISSOES[usuarioAtual.perfil]||PERMISSOES.recepcao) : PERMISSOES.admin;
 
-  // Carrega dados do banco em paralelo
+  // Mostra loading imediato enquanto busca dados
+  set('<div style="display:flex;align-items:center;justify-content:center;height:200px;flex-direction:column;gap:12px">'+
+  '<div style="width:28px;height:28px;border:3px solid var(--border-md);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite"></div>'+
+  '<div style="font-size:13px;color:var(--text-2)">Carregando…</div></div>');
   let alunosDB=[], vendasDB=[], fisioAtivosDB=[], estoqueBaixo=[];
   try {
     const [ra,rv,rf,re] = await Promise.all([
@@ -2770,7 +2773,7 @@ async function rHome(){
   '</div>'+
   '<div style="text-align:right">'+
   '<div style="font-size:12px;font-weight:700;color:var(--gold-dark);letter-spacing:.05em">LM ESTUDIO</div>'+
-  '<div style="font-size:11px;color:var(--text-3)">'+usuarioAtual?.nome||''+'</div>'+
+  '<div style="font-size:11px;color:var(--text-3)">'+(usuarioAtual?.nome||'')+'</div>'+
   '</div></div>'+
 
   // ── ALERTAS (só Fernando) ─────────────────────────────────
@@ -5305,38 +5308,32 @@ function blocoComissaoVitoria(todasVendas){
   return '<div style="font-size:11px;font-weight:700;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.08em;margin:20px 0 10px">'+
   '<i class="ti ti-percentage"></i> Comissão — Vitória</div>'+
   '<div class="tw"><table><thead><tr>'+
-  '<th>Mês</th><th>Total loja</th><th>Vendas Vitória</th><th>% participação</th><th>Comissão (%)</th><th>Valor a pagar</th>'+
+  '<th>Mês</th><th>Total loja</th><th>Vendas Vitória</th><th>Comissão</th><th>Valor a pagar</th>'+
   '</tr></thead><tbody>'+
   meses.map(([key,d])=>{
     const [mm,yyyy] = key.split('/');
     const isAtual = key===mesAtualKey;
-    // Regra de comissão:
-    // - Atendeu: conta no % de participação → ≥50% = 5%, <50% = 3%
-    // - Provador/indicação: sempre 3% fixo, não entra no % de participação
-    const pct = d.total>0 ? (d.vitoria/d.total*100) : 0;
-    const comPctAtendeu = pct>=50 ? 5 : (d.vitoria>0 ? 3 : 0);
-    const comAtendeu = d.vitoria * (comPctAtendeu/100);
+    // Regra simplificada:
+    // - Atendeu → sempre 5%
+    // - Provador/indicação → sempre 3%
+    const comAtendeu = d.vitoria * 0.05;
     const comProvador = d.provador * 0.03;
     const comTotal = comAtendeu + comProvador;
-    const pctLabel = pct.toFixed(1)+'%';
-    const pctColor = pct>=50 ? '#2D7A3A' : 'var(--gold-dark)';
+    const pct = d.total>0 ? (d.vitoria/d.total*100) : 0;
+
     return '<tr style="'+(isAtual?'background:rgba(201,169,110,.05)':'')+'">'+
     '<td style="font-weight:'+(isAtual?700:400)+'">'+nomesMes[parseInt(mm)]+' '+yyyy+
       (isAtual?' <span style="font-size:10px;color:var(--gold-dark)">● atual</span>':'')+
     '</td>'+
     '<td>'+fR(d.total)+'<span style="font-size:10px;color:var(--text-3);margin-left:4px">'+d.qtdTotal+' vendas</span></td>'+
     '<td>'+
-      (d.vitoria>0?'<div style="font-size:12px;font-weight:500">Atendeu: '+fR(d.vitoria)+' ('+d.qtdVitoria+')</div>':'')+
-      (d.provador>0?'<div style="font-size:12px;color:var(--text-2)">Provador: '+fR(d.provador)+' ('+d.qtdProvador+')</div>':'')+
+      (d.vitoria>0?'<div style="font-size:12px;font-weight:500;color:var(--text-1)">Atendeu: '+fR(d.vitoria)+' <span style="color:var(--text-3)">('+d.qtdVitoria+' vendas)</span></div>':'')+
+      (d.provador>0?'<div style="font-size:12px;color:var(--text-2)">Provador: '+fR(d.provador)+' <span style="color:var(--text-3)">('+d.qtdProvador+')</span></div>':'')+
       (d.vitoria===0&&d.provador===0?'<span style="color:var(--text-3)">—</span>':'')+
     '</td>'+
-    '<td>'+(d.vitoria>0?'<span style="font-weight:700;color:'+pctColor+'">'+pctLabel+'</span>'+
-      '<div style="height:4px;border-radius:2px;background:var(--bg-2);margin-top:3px;width:80px">'+
-      '<div style="width:'+Math.min(pct,100)+'%;height:100%;border-radius:2px;background:'+pctColor+'"></div></div>':
-      (d.provador>0?'<span class="bdg ba">Provador</span>':'—'))+'</td>'+
     '<td>'+
-      (d.vitoria>0?'<span class="bdg '+(comPctAtendeu===5?'bg':'ba')+'">'+comPctAtendeu+'%</span>':'')+
-      (d.provador>0?'<span class="bdg bx" style="margin-left:4px">3% fixo</span>':'')+
+      (d.vitoria>0?'<span class="bdg bg">5%</span>':'')+
+      (d.provador>0?'<span class="bdg ba" style="margin-left:4px">3%</span>':'')+
       (d.vitoria===0&&d.provador===0?'<span style="color:var(--text-3)">—</span>':'')+
     '</td>'+
     '<td style="font-weight:700;color:'+(comTotal>0?'#2D7A3A':'var(--text-3)')+'">'+fR(comTotal)+
@@ -5346,7 +5343,7 @@ function blocoComissaoVitoria(todasVendas){
   }).join('')+
   '</tbody></table>'+
   '<div style="padding:10px 16px;font-size:12px;color:var(--text-3);border-top:1px solid var(--border)">'+
-  '<i class="ti ti-info-circle"></i> Regra: participação ≥ 50% das vendas do mês → 5% de comissão · participação < 50% → 3%'+
+  '<i class="ti ti-info-circle"></i> Regra: vendas que Vitória atendeu → 5% · provador/indicação → 3%'+
   '</div></div>';
 }
 
