@@ -860,6 +860,7 @@ const PERMISSOES = {
 };
 
 let usuarioAtual = null;
+let pg = 'home', ft = '', filM = '';
 
 // Hash SHA-256 simples via SubtleCrypto
 async function sha256(str){
@@ -986,7 +987,17 @@ function nav(p){
     fin_geral:rFinGeral, logs:rLogs, gcal:rGcal,
     ponto:navPonto
   };
-  if(fn[p]) fn[p]();
+  if(fn[p]){
+    try {
+      const r = fn[p]();
+      if(r && typeof r.catch === 'function'){
+        r.catch(e=>{ console.error('nav error:', e); set('<div style="padding:32px;color:#C0392B">Erro ao carregar: '+e.message+'</div>'); });
+      }
+    } catch(e){
+      console.error('nav error:', e);
+      set('<div style="padding:32px;color:#C0392B">Erro: '+e.message+'</div>');
+    }
+  }
 }
 
 function semPermissao(){
