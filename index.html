@@ -797,7 +797,7 @@ function mostrarBannerInstall(){
   banner.id = 'pwa_banner';
   banner.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--white);border:1px solid var(--border-str);border-radius:14px;padding:14px 18px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow-lg);z-index:999;max-width:340px;width:90%;animation:fadeIn .3s ease';
   banner.innerHTML = `
-    <img src="data:image/png;base64,${icons['192']}" style="width:40px;height:40px;border-radius:10px">
+    <img src="" style="width:40px;height:40px;border-radius:10px" onerror="this.style.display='none'">
     <div style="flex:1">
       <div style="font-size:13px;font-weight:600;color:var(--brown)">Instalar Lm Estudio</div>
       <div style="font-size:11px;color:var(--brown-light)">Adicionar à tela inicial</div>
@@ -965,6 +965,28 @@ function checarPermissao(pagina){
   if(pagina==='fin_geral' && !perm.verFinGeral) return false;
   if(pagina==='logs' && !perm.verFinGeral) return false;
   return true;
+}
+
+function nav(p){
+  pg=p; ft=''; filM='';
+  if(!checarPermissao(p)){ semPermissao(); return; }
+  document.querySelectorAll('.ni').forEach(n=>n.classList.remove('act'));
+  const niAtivo = document.getElementById('ni_'+p);
+  if(niAtivo) niAtivo.classList.add('act');
+  if(p==='ponto'){ const b=document.getElementById('btnPontoTop')||document.getElementById('btnPonto'); if(b) b.classList.add('act'); }
+  if(p==='fin_geral'){ const b=document.getElementById('btnFinGeral'); if(b) b.classList.add('act'); }
+  if(p==='logs'){ const b=document.getElementById('btnLogs'); if(b) b.classList.add('act'); }
+  if(p==='gcal'){ const b=document.getElementById('btnAgenda'); if(b) b.classList.add('act'); }
+  const fn={
+    home:rHome,
+    p_dash:navPDash, p_alunos:navPAlunos, p_agenda:rPAgenda, p_fin:navPFin,
+    f_dash:navFDash, f_pacientes:navFPacientes,
+    l_dash:navLDash, l_vendas:navLVendas, l_estoque:navLEstoque,
+    l_encomendas:navLEncomendas, l_clientes:navLClientes, l_entrada:navLEntrada,
+    fin_geral:rFinGeral, logs:rLogs, gcal:rGcal,
+    ponto:navPonto
+  };
+  if(fn[p]) fn[p]();
 }
 
 function semPermissao(){
