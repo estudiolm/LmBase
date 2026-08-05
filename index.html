@@ -3312,6 +3312,87 @@ async function converterAtivoObj(){
   } catch(e){ alert('Erro: '+e.message); }
 }
 
+// ── PILATES DASH ─────────────────────────────────────────────
+async function navPDash(){
+  const base = window._alunosDB||AL;
+  const at=base.filter(a=>a.s==='A').length;
+  const ex=base.filter(a=>a.s==='E').length;
+  const pr=base.filter(a=>a.s==='P').length;
+  const av=base.filter(a=>a.s==='AV').length;
+  const pa=base.filter(a=>a.s==='PA').length;
+  const total=at+ex+pr+av+pa;
+  const agora=new Date(); const mes=agora.getMonth()+1; const mesStr=String(mes).padStart(2,'0');
+  const venceMes=base.filter(a=>{ if(!a.px||a.px==='parceria')return false; const p=(a.px||'').split('/'); return parseInt(p[1])===mes; });
+  const recMensal=base.filter(a=>a.s==='A').reduce((s,a)=>s+(parseFloat(a.v)||0),0);
+
+  set('<div class="pt">Dashboard — Pilates</div><div class="ps">Visão geral dos alunos</div>'+
+  '<div class="metrics3">'+
+  mc('Ativos','vg',at,'alunos')+
+  mc('Experimentais','va',ex,'em avaliação')+
+  mc('Prospects','vi',pr,'a converter')+
+  '</div>'+
+  '<div class="metrics3">'+
+  mc('Avulsos','vb',av,'sem plano fixo')+
+  mc('Pausados','vr',pa,'temporariamente')+
+  mc('Receita estimada','vg','R$ '+recMensal.toLocaleString('pt-BR'),'mês atual')+
+  '</div>'+
+
+  // Funil visual
+  '<div class="dp" style="padding:20px;margin-bottom:16px">'+
+  '<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px">Funil de conversão</div>'+
+  '<div style="display:flex;gap:0;border-radius:var(--r-md);overflow:hidden">'+
+  [['Prospects',pr,'#7C4D2E'],['Experimentais',ex,'#B8924A'],['Ativos',at,'#2D7A3A'],['Avulsos',av,'#4A6BAF'],['Pausados',pa,'#888']].map(([lb,n,cor])=>
+    '<div style="flex:'+(n||1)+';background:'+cor+'22;border-right:1px solid #fff;padding:14px 10px;text-align:center;min-width:60px">'+
+    '<div style="font-size:20px;font-weight:700;color:'+cor+'">'+n+'</div>'+
+    '<div style="font-size:10px;color:var(--text-3);margin-top:2px">'+lb+'</div></div>'
+  ).join('')+
+  '</div></div>'+
+
+  // Vencimentos do mês
+  (venceMes.length?
+  '<div class="dp" style="padding:16px">'+
+  '<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">'+
+  'Vencimentos este mês ('+venceMes.length+')</div>'+
+  '<div class="tw"><table><thead><tr><th>Aluno</th><th>Plano</th><th>Vence</th><th>Valor</th></tr></thead><tbody>'+
+  venceMes.sort((a,b)=>{const[da]=( a.px||'').split('/').map(Number);const[db]=(b.px||'').split('/').map(Number);return da-db;})
+  .slice(0,10).map(a=>'<tr><td>'+a.n+'</td><td style="color:var(--text-2)">'+a.pl+'</td><td>'+a.px+'</td><td style="color:var(--gold-dark);font-weight:600">R$ '+a.v+'</td></tr>').join('')+
+  '</tbody></table></div></div>':'')
+  );
+}
+
+// ── LOJA DASH ─────────────────────────────────────────────────
+async function navLDash(){
+  set('<div class="pt">Dashboard — Loja</div><div class="ps">Carregando…</div>'+
+  '<div style="display:flex;align-items:center;justify-content:center;height:120px">'+
+  '<div style="width:24px;height:24px;border:3px solid var(--border-md);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite"></div></div>');
+  try {
+    const [vendas, estoque] = await Promise.all([sbGet('vendas','data_venda'), sbGet('estoque','item')]);
+    const recTotal = vendas.reduce((s,v)=>s+(parseFloat(v.preco)||0),0);
+    const recMes   = vendas.filter(v=>{ if(!v.data_venda)return false; const d=new Date(v.data_venda); return d.getMonth()===new Date().getMonth()&&d.getFullYear()===new Date().getFullYear(); }).reduce((s,v)=>s+(parseFloat(v.preco)||0),0);
+    const estTotal  = estoque.reduce((s,e)=>s+(e.quantidade||0),0);
+    const estZero   = estoque.filter(e=>(e.quantidade||0)===0).length;
+    const valorEst  = estoque.reduce((s,e)=>s+((e.quantidade||0)*(parseFloat(e.preco)||0)),0);
+    set('<div class="pt">Dashboard — Loja</div><div class="ps">Resumo de vendas e estoque</div>'+
+    '<div class="metrics3">'+
+    mc('Faturamento total','vg',fR(recTotal),vendas.length+' vendas')+
+    mc('Faturamento mês','va',fR(recMes),'mês atual')+
+    mc('Unidades em estoque','vi',estTotal,estZero+' zeradas')+
+    '</div>'+
+    '<div class="metrics3">'+
+    mc('Valor do estoque','vg',fR(valorEst),'preço de venda')+
+    mc('Modelos cadastrados','vb',estoque.length,'diferentes')+
+    mc('Zerados','vr',estZero,'sem estoque')+
+    '</div>'+
+    '<div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">'+
+    '<button class="btn btnp" onclick="nav(\'l_vendas\')"><i class="ti ti-receipt"></i> Ver vendas</button>'+
+    '<button class="btn btnb" onclick="nav(\'l_estoque\')"><i class="ti ti-package"></i> Ver estoque</button>'+
+    '<button class="btn" onclick="abrirNovaVenda()"><i class="ti ti-plus"></i> Nova venda</button>'+
+    '</div>');
+  } catch(e){
+    set('<div class="pt">Dashboard — Loja</div><div class="ps">Erro ao carregar dados</div>');
+  }
+}
+
 // ── PILATES FIN ───────────────────────────────────────────
 async function navPFin(){
   renderPFin(AL.filter(a=>a.s==='A'), []);
