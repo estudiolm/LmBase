@@ -5378,7 +5378,7 @@ async function rFinGeral(){
   blocoComissaoVitoria(todasVendas)+
 
   // ── CONSOLIDADO MENSAL ─────────────────────────────────────
-  blocoMensalConsolidado(pagsBanco, todasVendas, await sbGet('sessoes_fisio','data_sessao').catch(()=>[]))
+  blocoMensalConsolidado(pagsBanco, todasVendas, await sbGet('sessoes_fisio','data_sessao').catch(()=>[]), alunosBanco)
   );
 }
 
@@ -5461,7 +5461,7 @@ function blocoComissaoVitoria(todasVendas){
   '</div></div>';
 }
 
-function blocoMensalConsolidado(pagamentos, vendas, sessoesFisio){
+function blocoMensalConsolidado(pagamentos, vendas, sessoesFisio, alunosBanco){
   const agora = new Date();
   const nomesMes = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const PRECO_SESSAO_FISIO = 145;
@@ -5478,6 +5478,28 @@ function blocoMensalConsolidado(pagamentos, vendas, sessoesFisio){
     const ano=p[2].length===4?p[2]:'20'+p[2];
     return p[1].padStart(2,'0')+'/'+ano;
   }
+
+  // Agrupa novos e pausados por mês (usando criado_em do banco)
+  const novosPorMes = {};
+  const pausadosPorMes = {};
+  (alunosBanco||[]).forEach(a=>{
+    // Novos: status A ou E e tem criado_em
+    if(a.criado_em){
+      const key = parseMesAno(a.criado_em);
+      if(key){
+        if(!novosPorMes[key]) novosPorMes[key]=0;
+        novosPorMes[key]++;
+      }
+    }
+    // Pausados: status PA
+    if(a.status==='PA' && a.updated_at){
+      const key = parseMesAno(a.updated_at);
+      if(key){
+        if(!pausadosPorMes[key]) pausadosPorMes[key]=0;
+        pausadosPorMes[key]++;
+      }
+    }
+  });
 
   const porMes={};
   const addMes=(key)=>{ if(!porMes[key]) porMes[key]={pilates:0,qtdPilates:0,loja:0,qtdLoja:0,fisio:0,qtdFisio:0}; };
@@ -5523,12 +5545,14 @@ function blocoMensalConsolidado(pagamentos, vendas, sessoesFisio){
   '</div>'+
 
   '<div class="tw"><table><thead><tr>'+
-  '<th>Mês</th><th>Pilates</th><th>Fisioterapia</th><th>Loja</th><th style="font-weight:700">Total</th><th></th>'+
+  '<th>Mês</th><th>Pilates</th><th>Fisioterapia</th><th>Loja</th><th style="font-weight:700">Total</th><th>Novos</th><th>Pausados</th><th></th>'+
   '</tr></thead><tbody>'+
   meses.map(([key,d])=>{
     const [mm,yyyy]=key.split('/');
     const isAtual=key===mesAtualKey;
     const total=d.pilates+d.fisio+d.loja;
+    const novos   = novosPorMes[key]||0;
+    const pausados= pausadosPorMes[key]||0;
     return '<tr style="'+(isAtual?'background:rgba(201,169,110,.05)':'')+'">'+
     '<td style="font-weight:'+(isAtual?700:500)+';white-space:nowrap">'+
       nomesMes[parseInt(mm)]+' '+yyyy+
@@ -5551,6 +5575,8 @@ function blocoMensalConsolidado(pagamentos, vendas, sessoesFisio){
       :'<span style="color:var(--text-3)">—</span>')+
     '</td>'+
     '<td style="font-weight:700;color:var(--text-1);font-size:14px">'+fR(total)+'</td>'+
+    '<td>'+(novos>0?'<span class="bdg bg" style="font-size:11px">+'+novos+'</span>':'<span style="color:var(--text-3)">—</span>')+'</td>'+
+    '<td>'+(pausados>0?'<span class="bdg ba" style="font-size:11px">'+pausados+'</span>':'<span style="color:var(--text-3)">—</span>')+'</td>'+
     '<td style="font-size:10px;color:var(--text-3)">'+(isAtual?'parcial':'')+'</td>'+
     '</tr>';
   }).join('')+
@@ -5560,6 +5586,8 @@ function blocoMensalConsolidado(pagamentos, vendas, sessoesFisio){
   '<td style="font-weight:700;color:#3D7A3A">'+fR(totalFisio)+'</td>'+
   '<td style="font-weight:700;color:var(--brown-mid)">'+fR(totalLoja)+'</td>'+
   '<td style="font-weight:700;color:var(--text-1);font-size:14px">'+fR(totalGeral)+'</td>'+
+  '<td style="font-weight:700;color:#2D7A3A">+'+Object.values(novosPorMes).reduce((s,n)=>s+n,0)+'</td>'+
+  '<td style="font-weight:700;color:var(--gold-dark)">'+Object.values(pausadosPorMes).reduce((s,n)=>s+n,0)+'</td>'+
   '<td></td>'+
   '</tr>'+
   '</tbody></table></div>';
