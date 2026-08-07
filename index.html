@@ -5192,6 +5192,14 @@ async function rFinGeral(){
     safe(fetchWithTimeout(`${SB_URL}/rest/v1/pacientes_fisio?select=*&limit=200`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}},8000)),
   ]);
 
+  // Busca extras em paralelo
+  const [resSessoes, resLogs] = await Promise.all([
+    safe(fetchWithTimeout(`${SB_URL}/rest/v1/sessoes_fisio?select=*&order=data_sessao&limit=2000`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}},8000)),
+    safe(fetchWithTimeout(`${SB_URL}/rest/v1/logs_alteracoes?tabela=eq.alunos&order=criado_em.desc&limit=1000`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}},8000)),
+  ]);
+  window._sessFisio  = resSessoes ? await resSessoes.json().catch(()=>[]) : [];
+  window._logsAlunos = resLogs    ? await resLogs.json().catch(()=>[])    : [];
+
   // Parseia respostas — fallback para dados em cache/local se falhar
   const alunosBanco   = resAlunos   ? await resAlunos.json().catch(()=>[])   : [];
   const pagsBanco     = resPags     ? await resPags.json().catch(()=>[])     : [];
@@ -5378,7 +5386,7 @@ async function rFinGeral(){
   blocoComissaoVitoria(todasVendas)+
 
   // ── CONSOLIDADO MENSAL ─────────────────────────────────────
-  blocoMensalConsolidado(pagsBanco, todasVendas, await sbGet('sessoes_fisio','data_sessao').catch(()=>[]), alunosBanco)
+  blocoMensalConsolidado(pagsBanco, todasVendas, window._sessFisio||[], window._logsAlunos||[])
   );
 }
 
@@ -5461,7 +5469,7 @@ function blocoComissaoVitoria(todasVendas){
   '</div></div>';
 }
 
-function blocoMensalConsolidado(pagamentos, vendas, sessoesFisio, alunosBanco){
+function blocoMensalConsolidado(pagamentos, vendas, sessoesFisio, logsAlunos){
   const agora = new Date();
   const nomesMes = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const PRECO_SESSAO_FISIO = 145;
@@ -5479,25 +5487,20 @@ function blocoMensalConsolidado(pagamentos, vendas, sessoesFisio, alunosBanco){
     return p[1].padStart(2,'0')+'/'+ano;
   }
 
-  // Agrupa novos e pausados por mês (usando criado_em do banco)
+  // Usa logs para rastrear novos cadastros e pausamentos por mês
   const novosPorMes = {};
   const pausadosPorMes = {};
-  (alunosBanco||[]).forEach(a=>{
-    // Novos: status A ou E e tem criado_em
-    if(a.criado_em){
-      const key = parseMesAno(a.criado_em);
-      if(key){
-        if(!novosPorMes[key]) novosPorMes[key]=0;
-        novosPorMes[key]++;
-      }
+
+  logsAlunos.forEach(l=>{
+    const key = parseMesAno(l.criado_em);
+    if(!key) return;
+    if(l.acao==='cadastrou aluno'||l.acao==='converteu para ativo'){
+      if(!novosPorMes[key]) novosPorMes[key]=0;
+      novosPorMes[key]++;
     }
-    // Pausados: status PA
-    if(a.status==='PA' && a.updated_at){
-      const key = parseMesAno(a.updated_at);
-      if(key){
-        if(!pausadosPorMes[key]) pausadosPorMes[key]=0;
-        pausadosPorMes[key]++;
-      }
+    if(l.acao==='pausou aluno'){
+      if(!pausadosPorMes[key]) pausadosPorMes[key]=0;
+      pausadosPorMes[key]++;
     }
   });
 
