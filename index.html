@@ -5577,11 +5577,17 @@ async function rLogs(){
   );
 
   let rows = [];
-  try { rows = await sbGet('logs_alteracoes','id'); } catch(e){}
-  rows.sort((a,b)=>new Date(b.criado_em)-new Date(a.criado_em));
+  try {
+    const r = await fetchWithTimeout(
+      `${SB_URL}/rest/v1/logs_alteracoes?select=*&order=criado_em.desc&limit=2000`,
+      {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}}
+    );
+    rows = await r.json();
+  } catch(e){ console.warn('rLogs:', e); }
   window._logsCache = rows;
-
   renderLogsView(rows);
+  // Aplica filtro "hoje" por padrão
+  setTimeout(filtrarLogs, 50);
 }
 
 function renderLogsView(rows){
@@ -5690,11 +5696,11 @@ function renderLogsView(rows){
     '</select>'+
     '<select class="sel" id="logPeriodo" onchange="filtrarLogs()">'+
       '<option value="">Todo período</option>'+
-      '<option value="hoje">Hoje</option>'+
+      '<option value="hoje" selected>Hoje</option>'+
       '<option value="semana">Esta semana</option>'+
       '<option value="mes">Este mês</option>'+
     '</select>'+
-    '<span style="margin-left:auto;font-size:12px;color:var(--brown-light)" id="logCount">'+rows.length+' registros</span>'+
+    '<span style="margin-left:auto;font-size:12px;color:var(--text-2)" id="logCount">'+hojeCount+' registros hoje</span>'+
     '</div>'+
 
     // ── TABELA COMPLETA ───────────────────────────────────
