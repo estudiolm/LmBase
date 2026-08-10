@@ -5292,7 +5292,9 @@ async function rFinGeral(){
   const maxM=marcasTop[0]?marcasTop[0][1]:1;
 
   // ── TOTAL GERAL ───────────────────────────────────────────
-  // Usa valores do mês atual para exibição principal
+  const totalGeral = recMensal + recFisioMes + recLojaMes + recEnc;
+  const maxBar = Math.max(recMensal, recFisioMes, recLojaMes+recEnc) || 1;
+
   function barraH(val, max, cor){
     const pct = Math.round(val/max*100);
     return `<div style="height:8px;border-radius:4px;background:#EDE0CC;margin-top:4px"><div style="width:${pct}%;height:100%;border-radius:4px;background:${cor}"></div></div>`;
