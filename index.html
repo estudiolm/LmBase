@@ -5244,21 +5244,45 @@ async function rFinGeral(){
 
   const PRECO_SESSAO = 145;
   const totalSessoes  = fisioBase.reduce((s,p)=>s+(p.realizadas||0),0);
-  const recFisio      = totalSessoes * PRECO_SESSAO;
   const pacAtivos     = fisioBase.filter(p=>p.status!=='alta').length;
   const pacConc       = fisioBase.filter(p=>p.sessoes&&p.realizadas>=p.sessoes).length;
   const pacAndamento  = fisioBase.filter(p=>p.status!=='alta'&&p.realizadas>0&&(!p.sessoes||p.realizadas<p.sessoes)).length;
+
+  // Sessões do mês atual
+  const mesN = agora.getMonth()+1, anoN = agora.getFullYear();
+  function isMesAtual(dataStr){
+    if(!dataStr) return false;
+    const s=String(dataStr).split('T')[0];
+    const [y,m]=s.split('-');
+    return parseInt(m)===mesN && parseInt(y)===anoN;
+  }
+  function isMesAtualDDMM(dataStr){
+    if(!dataStr) return false;
+    const s=String(dataStr);
+    if(s.match(/^\d{4}-\d{2}/)) return isMesAtual(s);
+    const p=s.split('/');
+    if(p.length<3) return false;
+    const ano=p[2].length===4?parseInt(p[2]):parseInt('20'+p[2]);
+    return parseInt(p[1])===mesN && ano===anoN;
+  }
+  const sessoesMes = (window._sessFisio||[]).filter(s=>isMesAtual(s.data_sessao));
+  const recFisioMes = sessoesMes.length * PRECO_SESSAO;
+  const recFisio = totalSessoes * PRECO_SESSAO; // acumulado para referência
 
   // ── LOJA ─────────────────────────────────────────────────
   const todasVendas = vendasBanco.map(r=>({
     item:r.item,marca:r.marca,
     preco:parseFloat(r.preco)||0,
     custo:parseFloat(r.custo)||0,
-    data:r.data_venda
+    data:r.data_venda,
+    vendedor:r.vendedor,
+    participacao_vitoria:r.participacao_vitoria
   }));
-  const recLoja   = todasVendas.reduce((s,v)=>s+v.preco,0);
-  const custoLoja = todasVendas.filter(v=>v.custo>0).reduce((s,v)=>s+v.custo,0);
-  const margemLoja= custoLoja>0?((recLoja-custoLoja)/recLoja*100):null;
+  const vendasMes  = todasVendas.filter(v=>isMesAtualDDMM(v.data));
+  const recLojaMes = vendasMes.reduce((s,v)=>s+v.preco,0);
+  const recLoja    = todasVendas.reduce((s,v)=>s+v.preco,0);
+  const custoLoja  = todasVendas.filter(v=>v.custo>0).reduce((s,v)=>s+v.custo,0);
+  const margemLoja = custoLoja>0?((recLoja-custoLoja)/recLoja*100):null;
   const recEnc    = ENCOMENDAS.filter(e=>e.vf).reduce((s,e)=>s+(parseFloat(e.vf)||0),0);
   const encPend   = ENCOMENDAS.filter(e=>!e.vf).length;
 
@@ -5268,9 +5292,7 @@ async function rFinGeral(){
   const maxM=marcasTop[0]?marcasTop[0][1]:1;
 
   // ── TOTAL GERAL ───────────────────────────────────────────
-  const totalGeral = recMensal + recFisio + recLoja + recEnc;
-  const maxBar = Math.max(recMensal, recFisio, recLoja+recEnc);
-
+  // Usa valores do mês atual para exibição principal
   function barraH(val, max, cor){
     const pct = Math.round(val/max*100);
     return `<div style="height:8px;border-radius:4px;background:#EDE0CC;margin-top:4px"><div style="width:${pct}%;height:100%;border-radius:4px;background:${cor}"></div></div>`;
@@ -5283,10 +5305,10 @@ async function rFinGeral(){
   // ── TOTAIS ────────────────────────────────────────────────
   '<div style="background:#FDF8F2;border:.5px solid rgba(184,146,74,.3);border-radius:14px;padding:18px;margin-bottom:16px;display:flex;align-items:center;gap:20px">'+
   '<div style="flex:1"><div style="font-size:11px;color:#7A5230;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Receita total estimada/mês</div>'+
-  '<div style="font-size:32px;font-weight:700;color:#B8924A">R$ '+Math.round(recMensal+recFisio).toLocaleString('pt-BR')+'</div>'+
+  '<div style="font-size:32px;font-weight:700;color:#B8924A">R$ '+Math.round(recMensal+recFisioMes).toLocaleString('pt-BR')+'</div>'+
   '<div style="font-size:11px;color:#7A5230;margin-top:2px">Pilates + Fisioterapia (recorrente)</div></div>'+
   '<div style="text-align:right"><div style="font-size:11px;color:#7A5230;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Loja (acumulado)</div>'+
-  '<div style="font-size:20px;font-weight:700;color:#7A5230">R$ '+Math.round(recLoja+recEnc).toLocaleString('pt-BR')+'</div>'+
+  '<div style="font-size:20px;font-weight:700;color:#7A5230">R$ '+Math.round(recLojaMes+recEnc).toLocaleString('pt-BR')+'</div>'+
   '<div style="font-size:11px;color:#7A5230;margin-top:2px">Vendas + encomendas recebidas</div></div>'+
   '</div>'+
 
@@ -5316,9 +5338,9 @@ async function rFinGeral(){
   '<div style="width:32px;height:32px;border-radius:8px;background:#6B7A2E22;display:flex;align-items:center;justify-content:center">'+
   '<i class="ti ti-heart-rate-monitor" style="font-size:16px;color:#6B7A2E"></i></div>'+
   '<div style="font-size:13px;font-weight:600;color:#4A2E1A">Fisioterapia</div></div>'+
-  '<div style="font-size:22px;font-weight:700;color:#6B7A2E;margin-bottom:2px">R$ '+recFisio.toLocaleString('pt-BR')+'</div>'+
-  '<div style="font-size:11px;color:#7A5230;margin-bottom:12px">estimado · R$ '+PRECO_SESSAO+'/sessão</div>'+
-  barraH(recFisio,maxBar,'#6B7A2E')+
+  '<div style="font-size:22px;font-weight:700;color:#6B7A2E;margin-bottom:2px">R$ '+Math.round(recFisioMes).toLocaleString('pt-BR')+'</div>'+
+  '<div style="font-size:11px;color:#7A5230;margin-bottom:12px">mês atual · '+sessoesMes.length+' sessões × R$ '+PRECO_SESSAO+'</div>'+
+  barraH(recFisioMes,maxBar,'#6B7A2E')+
   '<div style="margin-top:12px;display:flex;flex-direction:column;gap:5px">'+
   '<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:var(--text-2)">Total de sessões</span><span style="font-weight:600;color:var(--text-1)">'+totalSessoes+' sessões</span></div>'+
   '<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:var(--text-2)">Pacientes ativos</span><span style="font-weight:600;color:var(--text-1)">'+pacAtivos+'</span></div>'+
@@ -5332,9 +5354,9 @@ async function rFinGeral(){
   '<div style="width:32px;height:32px;border-radius:8px;background:#7A523022;display:flex;align-items:center;justify-content:center">'+
   '<i class="ti ti-shirt" style="font-size:16px;color:#7A5230"></i></div>'+
   '<div style="font-size:13px;font-weight:600;color:#4A2E1A">Loja</div></div>'+
-  '<div style="font-size:22px;font-weight:700;color:#7A5230;margin-bottom:2px">R$ '+Math.round(recLoja).toLocaleString('pt-BR')+'</div>'+
-  '<div style="font-size:11px;color:#7A5230;margin-bottom:12px">'+todasVendas.length+' itens vendidos</div>'+
-  barraH(recLoja+recEnc,maxBar,'#7A5230')+
+  '<div style="font-size:22px;font-weight:700;color:#7A5230;margin-bottom:2px">R$ '+Math.round(recLojaMes).toLocaleString('pt-BR')+'</div>'+
+  '<div style="font-size:11px;color:#7A5230;margin-bottom:12px">mês atual · '+vendasMes.length+' vendas</div>'+
+  barraH(recLojaMes+recEnc,maxBar,'#7A5230')+
   '<div style="margin-top:12px;display:flex;flex-direction:column;gap:5px">'+
   '<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:#7A5230">Encomendas recebidas</span><span style="font-weight:600;color:#3D5C1A">R$ '+Math.round(recEnc).toLocaleString('pt-BR')+'</span></div>'+
   '<div style="display:flex;justify-content:space-between;font-size:11px"><span style="color:#7A5230">Encomendas pendentes</span><span style="font-weight:600;color:#8B6914">'+encPend+' pedidos</span></div>'+
