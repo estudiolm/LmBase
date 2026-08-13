@@ -703,6 +703,7 @@ select.fi { cursor:pointer; }
 
   <div class="nsep" id="sepRelatorios">relatórios</div>
   <button class="ni" id="btnFinGeral" onclick="nav('fin_geral')"><i class="ti ti-cash"></i>Financeiro Geral</button>
+  <button class="ni" id="btnDRE" onclick="nav('dre')"><i class="ti ti-chart-pie"></i>DRE & Metas</button>
   <button class="ni" id="btnLogs" onclick="nav('logs')"><i class="ti ti-history"></i>Histórico</button>
   <button class="ni" id="btnPonto" onclick="nav('ponto')"><i class="ti ti-fingerprint"></i>Controle de Ponto</button>
 
@@ -940,11 +941,13 @@ function aplicarPermissoes(){
   if(finBtn) finBtn.style.display = perm.verFinanceiro ? '' : 'none';
 
   const finGeralBtn = document.getElementById('btnFinGeral');
+  const dreBtn      = document.getElementById('btnDRE');
   const sepRel = document.getElementById('sepRelatorios');
   const logsBtn = document.getElementById('btnLogs');
   const pontoTop = document.getElementById('btnPontoTop');
   const pontoRel = document.getElementById('btnPonto');
   if(finGeralBtn) finGeralBtn.style.display = perm.verFinGeral ? '' : 'none';
+  if(dreBtn)      dreBtn.style.display      = perm.verFinGeral ? '' : 'none';
   if(logsBtn) logsBtn.style.display = perm.verFinGeral ? '' : 'none';
   if(sepRel) sepRel.style.display = perm.verFinGeral ? '' : 'none';
   // Ponto: topo para recepção, rodapé relatórios para admin
@@ -985,7 +988,7 @@ function nav(p){
     l_dash:navLDash, l_vendas:navLVendas, l_estoque:navLEstoque,
     l_encomendas:navLEncomendas, l_clientes:navLClientes, l_entrada:navLEntrada,
     fin_geral:rFinGeral, logs:rLogs, gcal:rGcal,
-    ponto:navPonto
+    ponto:navPonto, dre:navDRE
   };
   if(fn[p]){
     try {
@@ -5620,6 +5623,284 @@ function blocoMensalConsolidado(pagamentos, vendas, sessoesFisio, logsAlunos){
   '</tbody></table></div>';
 }
 // ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// DRE & METAS
+// ═══════════════════════════════════════════════════════════
+
+// Despesas fixas padrão (base mensal)
+const DESPESAS_FIXAS = [
+  {descricao:'Aluguel',            categoria:'infraestrutura', valor:2800},
+  {descricao:'Energia elétrica',   categoria:'infraestrutura', valor:315},
+  {descricao:'Água',               categoria:'infraestrutura', valor:150},
+  {descricao:'Internet',           categoria:'infraestrutura', valor:100},
+  {descricao:'Contador',           categoria:'administrativo',  valor:320},
+  {descricao:'Sistemas / IA',      categoria:'administrativo',  valor:200},
+  {descricao:'Salário Larissa M.', categoria:'pessoal',         valor:3800},
+  {descricao:'Salário Vitória',    categoria:'pessoal',         valor:1200},
+  {descricao:'Limpeza / insumos',  categoria:'insumos',         valor:250},
+  {descricao:'Café',               categoria:'insumos',         valor:150},
+  {descricao:'Lençóis de maca',    categoria:'insumos',         valor:100},
+];
+const TOTAL_FIXO = DESPESAS_FIXAS.reduce((s,d)=>s+d.valor,0); // ~9385
+
+const META_LUCRO = 40000;
+const TAXA_SIMPLES = 0.06; // 6% faixa 1 Simples Nacional
+
+const CAT_CORES = {
+  infraestrutura:'#4A6BAF', administrativo:'#8B4A8B',
+  pessoal:'#C0392B', insumos:'#E67E22', impostos:'#7D6608', outros:'#555'
+};
+
+async function navDRE(){
+  set('<div class="pt">DRE & Metas</div><div class="ps">Carregando dados…</div>'+
+  '<div style="display:flex;align-items:center;justify-content:center;height:120px">'+
+  '<div style="width:24px;height:24px;border:3px solid var(--border-md);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite"></div></div>');
+
+  const agora   = new Date();
+  const mesAtual = agora.getMonth()+1;
+  const anoAtual = agora.getFullYear();
+
+  // Busca dados em paralelo
+  const safe = p=>p.catch(()=>null);
+  const [rPags, rVendas, rSessoes, rDesp] = await Promise.all([
+    safe(fetchWithTimeout(`${SB_URL}/rest/v1/pagamentos?select=*&limit=2000`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}},8000)),
+    safe(fetchWithTimeout(`${SB_URL}/rest/v1/vendas?select=*&limit=2000`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}},8000)),
+    safe(fetchWithTimeout(`${SB_URL}/rest/v1/sessoes_fisio?select=*&limit=2000`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}},8000)),
+    safe(fetchWithTimeout(`${SB_URL}/rest/v1/despesas?select=*&order=ano.desc,mes.desc&limit=500`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}},8000)),
+  ]);
+
+  const pags    = rPags    ? await rPags.json().catch(()=>[])    : [];
+  const vendas  = rVendas  ? await rVendas.json().catch(()=>[])  : [];
+  const sessoes = rSessoes ? await rSessoes.json().catch(()=>[]) : [];
+  const despExtra = rDesp  ? await rDesp.json().catch(()=>[])   : [];
+
+  // ── Agrupa receitas por mês ────────────────────────────────
+  function getMesAno(s){
+    if(!s) return null;
+    const str=String(s);
+    if(str.match(/^\d{4}-\d{2}/)){const[y,m]=str.split('-');return{m:parseInt(m),y:parseInt(y)};}
+    const p=str.split('/'); if(p.length<3) return null;
+    return{m:parseInt(p[1]),y:p[2].length===4?parseInt(p[2]):parseInt('20'+p[2])};
+  }
+
+  // Meses com dados (últimos 6)
+  const mesesSet = new Set();
+  for(let i=0;i<6;i++){
+    const d=new Date(anoAtual,mesAtual-1-i,1);
+    mesesSet.add(`${d.getMonth()+1}/${d.getFullYear()}`);
+  }
+  // Adiciona meses futuros para previsão
+  for(let i=1;i<=3;i++){
+    const d=new Date(anoAtual,mesAtual-1+i,1);
+    mesesSet.add(`${d.getMonth()+1}/${d.getFullYear()}`);
+  }
+
+  const mesesOrdenados = [...mesesSet].sort((a,b)=>{
+    const[ma,ya]=a.split('/').map(Number);
+    const[mb,yb]=b.split('/').map(Number);
+    return ya!==yb?ya-yb:ma-mb;
+  });
+
+  // Calcula receitas por mês
+  function receitasMes(m,y){
+    const pilates = pags.filter(p=>{const d=getMesAno(p.data_pgto);return d&&d.m===m&&d.y===y;}).reduce((s,p)=>s+(parseFloat(p.valor)||0),0);
+    const loja    = vendas.filter(v=>{const d=getMesAno(v.data_venda);return d&&d.m===m&&d.y===y;}).reduce((s,v)=>s+(parseFloat(v.preco)||0),0);
+    const fisio   = sessoes.filter(s=>{const d=getMesAno(s.data_sessao);return d&&d.m===m&&d.y===y;}).length * 145;
+    return{pilates,loja,fisio,total:pilates+loja+fisio};
+  }
+
+  // Despesas extras do banco por mês
+  function despesasMes(m,y){
+    return despExtra.filter(d=>d.mes===m&&d.ano===y).reduce((s,d)=>s+(parseFloat(d.valor)||0),0);
+  }
+
+  // Calcula crescimento médio da fisio (últimos 3 meses)
+  const fisioHist = [];
+  for(let i=3;i>=1;i--){
+    const d=new Date(anoAtual,mesAtual-1-i,1);
+    const r=receitasMes(d.getMonth()+1,d.getFullYear());
+    fisioHist.push(r.fisio);
+  }
+  const crescFisio = fisioHist.length>=2 ? (fisioHist[fisioHist.length-1]-fisioHist[0])/(fisioHist.length-1) : 200;
+
+  // ── Mês atual detalhado ────────────────────────────────────
+  const recAtual = receitasMes(mesAtual, anoAtual);
+  const despExtAtual = despesasMes(mesAtual, anoAtual);
+  const impostAtual  = Math.round(recAtual.total * TAXA_SIMPLES);
+  const totalDesp    = TOTAL_FIXO + despExtAtual + impostAtual;
+  const lucroAtual   = recAtual.total - totalDesp;
+
+  // % da meta (mês atual)
+  const pctMeta = Math.min(100, Math.round(lucroAtual/META_LUCRO*100));
+  const pctReceita = Math.min(100, Math.round(recAtual.total/(META_LUCRO+TOTAL_FIXO)*100));
+  const diasMes = new Date(anoAtual,mesAtual,0).getDate();
+  const diasPassados = agora.getDate();
+  const pctMes = Math.round(diasPassados/diasMes*100);
+  // Projeção do mês (extrapolação linear)
+  const projecaoReceita = diasPassados>0 ? Math.round(recAtual.total/diasPassados*diasMes) : 0;
+  const projecaoLucro   = projecaoReceita - totalDesp;
+
+  const nomesMes=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+  // ── RENDER ────────────────────────────────────────────────
+  set(
+  '<div class="pt">DRE & Metas</div>'+
+  '<div class="ps">Demonstrativo de Resultado — Simples Nacional · Meta de lucro líquido: '+fR(META_LUCRO)+'</div>'+
+
+  // ── META DO MÊS ──────────────────────────────────────────
+  '<div style="background:var(--white);border:1px solid var(--border);border-radius:var(--r-xl);padding:24px;margin-bottom:20px;box-shadow:var(--shadow-sm)">'+
+  '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">'+
+  '<div>'+
+  '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3)">Meta de lucro — '+nomesMes[mesAtual]+'/'+anoAtual+'</div>'+
+  '<div style="font-size:32px;font-weight:800;color:'+(lucroAtual>=0?'#2D7A3A':'#C0392B')+'">'+fR(lucroAtual)+'</div>'+
+  '<div style="font-size:12px;color:var(--text-2);margin-top:2px">Lucro atual · dia '+diasPassados+' de '+diasMes+' ('+pctMes+'% do mês)</div>'+
+  '</div>'+
+  '<div style="text-align:right">'+
+  '<div style="font-size:11px;color:var(--text-3)">Projeção ao fim do mês</div>'+
+  '<div style="font-size:22px;font-weight:700;color:'+(projecaoLucro>=META_LUCRO?'#2D7A3A':projecaoLucro>=0?'var(--gold-dark)':'#C0392B')+'">'+fR(projecaoLucro)+'</div>'+
+  '<div style="font-size:11px;color:var(--text-3)">meta: '+fR(META_LUCRO)+'</div>'+
+  '</div></div>'+
+
+  // Barra meta lucro
+  '<div style="margin-bottom:8px">'+
+  '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-2);margin-bottom:4px">'+
+  '<span>Lucro líquido</span><span style="font-weight:700;color:'+(pctMeta>=100?'#2D7A3A':pctMeta>=70?'var(--gold-dark)':'#C0392B')+'">'+pctMeta+'% da meta</span></div>'+
+  '<div style="height:12px;border-radius:6px;background:var(--bg-2);position:relative">'+
+  '<div style="width:'+pctMeta+'%;height:100%;border-radius:6px;background:'+(pctMeta>=100?'#2D7A3A':pctMeta>=70?'#C9A96E':'#C0392B')+';transition:width .5s"></div>'+
+  // Linha de progresso do mês
+  '<div style="position:absolute;top:-4px;left:'+pctMes+'%;width:2px;height:20px;background:var(--text-3);border-radius:1px" title="Hoje"></div>'+
+  '</div>'+
+  '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-3);margin-top:2px"><span>R$ 0</span><span>▲ hoje ('+pctMes+'%)</span><span>'+fR(META_LUCRO)+'</span></div>'+
+  '</div>'+
+
+  // Barra receita
+  '<div>'+
+  '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-2);margin-bottom:4px">'+
+  '<span>Receita bruta</span><span style="font-weight:700">'+fR(recAtual.total)+' → projeção '+fR(projecaoReceita)+'</span></div>'+
+  '<div style="height:8px;border-radius:4px;background:var(--bg-2)">'+
+  '<div style="width:'+pctReceita+'%;height:100%;border-radius:4px;background:var(--gold)"></div></div>'+
+  '</div></div>'+
+
+  // ── DRE MÊS ATUAL ─────────────────────────────────────────
+  '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">'+
+
+  // Receitas
+  '<div style="background:var(--white);border:1px solid var(--border);border-radius:var(--r-lg);padding:18px">'+
+  '<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">📈 Receitas — '+nomesMes[mesAtual]+'</div>'+
+  dreRow('Pilates',fR(recAtual.pilates),'#2D7A3A')+
+  dreRow('Fisioterapia',fR(recAtual.fisio),'#2D7A3A')+
+  dreRow('Loja',fR(recAtual.loja),'#2D7A3A')+
+  '<div style="border-top:2px solid var(--border);margin:10px 0"></div>'+
+  dreRow('RECEITA BRUTA',fR(recAtual.total),'#2D7A3A',true)+
+  '</div>'+
+
+  // Despesas
+  '<div style="background:var(--white);border:1px solid var(--border);border-radius:var(--r-lg);padding:18px">'+
+  '<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">📉 Despesas — '+nomesMes[mesAtual]+'</div>'+
+  DESPESAS_FIXAS.map(d=>dreRow(d.descricao,fR(d.valor),'#C0392B')).join('')+
+  dreRow('Simples Nacional (6%)',fR(impostAtual),'#7D6608')+
+  (despExtAtual>0?dreRow('Despesas extras',fR(despExtAtual),'#C0392B'):'')+
+  '<div style="border-top:2px solid var(--border);margin:10px 0"></div>'+
+  dreRow('TOTAL DESPESAS',fR(totalDesp),'#C0392B',true)+
+  '<div style="border-top:2px solid var(--border);margin:10px 0"></div>'+
+  dreRow('LUCRO LÍQUIDO',fR(lucroAtual),lucroAtual>=0?'#2D7A3A':'#C0392B',true)+
+  '<button class="btn btns" style="margin-top:10px;width:100%;justify-content:center" onclick="abrirLancarDespesa()"><i class="ti ti-plus"></i> Lançar despesa extra</button>'+
+  '</div></div>'+
+
+  // ── HISTÓRICO + PREVISÃO ──────────────────────────────────
+  '<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Histórico & Previsão</div>'+
+  '<div class="tw"><table><thead><tr>'+
+  '<th>Mês</th><th>Pilates</th><th>Fisio</th><th>Loja</th><th>Receita Bruta</th><th>Despesas</th><th>Imposto</th><th style="font-weight:700">Lucro Líquido</th>'+
+  '</tr></thead><tbody>'+
+  mesesOrdenados.map(key=>{
+    const[m,y]=key.split('/').map(Number);
+    const isFuturo = y>anoAtual||(y===anoAtual&&m>mesAtual);
+    const isAtual  = m===mesAtual&&y===anoAtual;
+    const rec = isFuturo ? previsaoMes(m,y,recAtual,crescFisio,pags,vendas,sessoes) : receitasMes(m,y);
+    const despE= isFuturo ? 0 : despesasMes(m,y);
+    const imp  = Math.round(rec.total*TAXA_SIMPLES);
+    const desp = TOTAL_FIXO + despE + imp;
+    const lucro= rec.total - desp;
+    return '<tr style="'+(isAtual?'background:rgba(201,169,110,.06);font-weight:600':isFuturo?'background:rgba(45,122,58,.03);color:var(--text-2);font-style:italic':'')+'">'+
+    '<td style="white-space:nowrap">'+nomesMes[m]+' '+y+(isAtual?' <span class="bdg ba" style="font-size:9px">atual</span>':isFuturo?' <span class="bdg bg" style="font-size:9px">previsão</span>':'')+'</td>'+
+    '<td>'+fR(rec.pilates)+'</td>'+
+    '<td>'+fR(rec.fisio)+(isFuturo?'<span style="font-size:9px;color:var(--gold-dark);margin-left:3px">↗</span>':'')+'</td>'+
+    '<td>'+fR(rec.loja)+'</td>'+
+    '<td style="font-weight:600">'+fR(rec.total)+'</td>'+
+    '<td style="color:#C0392B">'+fR(desp)+'</td>'+
+    '<td style="color:#7D6608">'+fR(imp)+'</td>'+
+    '<td style="font-weight:700;color:'+(lucro>=META_LUCRO?'#2D7A3A':lucro>=0?'var(--gold-dark)':'#C0392B')+'">'+fR(lucro)+
+    (lucro>=META_LUCRO?' ✓':'')+
+    '</td></tr>';
+  }).join('')+
+  '</tbody></table></div>'+
+  '<div style="font-size:11px;color:var(--text-3);margin-top:6px">'+
+  '<i class="ti ti-info-circle"></i> Previsão de fisio baseada no crescimento médio dos últimos 3 meses ('+fR(crescFisio)+'/mês). Despesas fixas aplicadas em todos os meses.'+
+  '</div>'
+  );
+}
+
+function previsaoMes(m, y, recAtual, crescFisio, pags, vendas, sessoes){
+  // Projeta com base no histórico
+  const agora=new Date();
+  const diffMeses=(y-agora.getFullYear())*12+(m-(agora.getMonth()+1));
+  // Pilates: cresce levemente com novos alunos
+  const pilates = recAtual.pilates * (1 + diffMeses*0.01);
+  // Fisio: aplica crescimento médio
+  const fisio = Math.max(0, recAtual.fisio + crescFisio*diffMeses);
+  // Loja: mantém média dos últimos 3 meses
+  const loja = recAtual.loja;
+  return{pilates:Math.round(pilates),fisio:Math.round(fisio),loja:Math.round(loja),total:Math.round(pilates+fisio+loja)};
+}
+
+function dreRow(label, valor, cor, bold=false){
+  return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border)">'+
+  '<span style="font-size:'+(bold?'13':'12')+'px;font-weight:'+(bold?700:400)+';color:var(--text-1)">'+label+'</span>'+
+  '<span style="font-size:'+(bold?'14':'12')+'px;font-weight:'+(bold?700:500)+';color:'+cor+'">'+valor+'</span></div>';
+}
+
+function abrirLancarDespesa(){
+  const hoje=new Date();
+  abrirModal(
+    '<div class="mdt"><i class="ti ti-receipt" style="margin-right:8px;color:var(--gold)"></i>Lançar despesa extra</div>'+
+    '<label class="fl">Descrição</label><input class="fi" id="dp_desc" placeholder="Ex: Manutenção equipamento, Taxa cartão…">'+
+    '<div class="fr2">'+
+    '<div><label class="fl">Categoria</label><select class="fi" id="dp_cat">'+
+      '<option value="infraestrutura">Infraestrutura</option>'+
+      '<option value="pessoal">Pessoal</option>'+
+      '<option value="insumos">Insumos</option>'+
+      '<option value="administrativo">Administrativo</option>'+
+      '<option value="impostos">Impostos</option>'+
+      '<option value="outros">Outros</option>'+
+    '</select></div>'+
+    '<div><label class="fl">Valor R$</label><input class="fi" id="dp_valor" type="number" placeholder="0,00"></div>'+
+    '</div>'+
+    '<div class="fr2">'+
+    '<div><label class="fl">Mês</label><select class="fi" id="dp_mes">'+
+      [1,2,3,4,5,6,7,8,9,10,11,12].map(m=>'<option value="'+m+'"'+(m===hoje.getMonth()+1?' selected':'')+'>'+['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][m]+'</option>').join('')+
+    '</select></div>'+
+    '<div><label class="fl">Ano</label><input class="fi" id="dp_ano" type="number" value="'+hoje.getFullYear()+'"></div>'+
+    '</div>'+
+    '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button>'+
+    '<button class="btn btnp" id="dp_btn" onclick="confirmarDespesa()"><i class="ti ti-check"></i> Salvar</button></div>'
+  );
+}
+
+async function confirmarDespesa(){
+  const btn=document.getElementById('dp_btn'); btn.disabled=true; btn.textContent='Salvando…';
+  const desc =document.getElementById('dp_desc').value.trim();
+  const cat  =document.getElementById('dp_cat').value;
+  const valor=parseFloat(document.getElementById('dp_valor').value)||0;
+  const mes  =parseInt(document.getElementById('dp_mes').value);
+  const ano  =parseInt(document.getElementById('dp_ano').value);
+  if(!desc||!valor){ btn.disabled=false; btn.textContent='Salvar'; alert('Preencha descrição e valor.'); return; }
+  try {
+    await sbInsert('despesas',{descricao:desc,categoria:cat,valor,mes,ano,tipo:'variavel'});
+    await registrarLog('lançou despesa','despesas',desc+' — '+fR(valor));
+    fecharModal(); navDRE();
+  } catch(e){ btn.disabled=false; btn.textContent='Salvar'; alert('Erro: '+e.message); }
+}
+
 // HISTÓRICO DE ALTERAÇÕES
 // ═══════════════════════════════════════════════════════════
 async function rLogs(){
