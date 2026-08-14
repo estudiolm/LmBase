@@ -1136,10 +1136,66 @@ const PERMISSOES = {
 let usuarioAtual = null;
 let pg = 'home', ft = '', filM = '', alTab = 'A';
 
-// Hash SHA-256 simples via SubtleCrypto
+// Hash SHA-256 — implementação pura JS (compatível com iOS/Safari sem HTTPS)
 async function sha256(str){
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  // Tenta SubtleCrypto primeiro (mais rápido)
+  try {
+    if(crypto && crypto.subtle){
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+      return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+    }
+  } catch(e){}
+  // Fallback: implementação pura JS
+  return sha256Pure(str);
+}
+
+function sha256Pure(ascii){
+  function rightRotate(value,amount){return(value>>>amount)|(value<<(32-amount));}
+  const mathPow=Math.pow;
+  const maxWord=mathPow(2,32);
+  let result='';
+  const words=[];
+  const isComposite={};
+  for(let candidate=2;words.length<64;candidate++){
+    if(!isComposite[candidate]){
+      for(let i=candidate*candidate;i<313;i+=candidate)isComposite[i]=true;
+      words.push(mathPow(candidate,1/2)%1*maxWord|0);
+    }
+  }
+  words.push.apply(words,words.splice(0,8));
+  const asciiBitLength=ascii.length*8;
+  let hash=words.slice(0,8);
+  ascii+='\x80';
+  while(ascii.length%64-56)ascii+='\x00';
+  for(let i=0;i<ascii.length;i++){
+    result+=String.fromCharCode(ascii.charCodeAt(i)>>4&0xf,ascii.charCodeAt(i)&0xf);
+  }
+  result=result.replace(/\d/g,n=>'0123456789abcdef'.charAt(n));
+  ascii+='\x00\x00\x00\x00';
+  for(let j=asciiBitLength;j;j>>=8)ascii=ascii.slice(0,-1)+String.fromCharCode(ascii.charCodeAt(ascii.length-1)|j&255);
+  for(let i=0;i<ascii.length;){
+    const w=[];
+    for(let j=0;j<16;j++,i+=4){
+      w[j]=(ascii.charCodeAt(i)<<24)|(ascii.charCodeAt(i+1)<<16)|(ascii.charCodeAt(i+2)<<8)|ascii.charCodeAt(i+3);
+    }
+    for(let j=16;j<64;j++){
+      const s0=rightRotate(w[j-15],7)^rightRotate(w[j-15],18)^(w[j-15]>>>3);
+      const s1=rightRotate(w[j-2],17)^rightRotate(w[j-2],19)^(w[j-2]>>>10);
+      w[j]=(w[j-16]+s0+w[j-7]+s1)|0;
+    }
+    let [a,b,c,d,e,f,g,h]=hash;
+    for(let j=0;j<64;j++){
+      const S1=rightRotate(e,6)^rightRotate(e,11)^rightRotate(e,25);
+      const ch=(e&f)^(~e&g);
+      const temp1=(h+S1+ch+words[j]+w[j])|0;
+      const S0=rightRotate(a,2)^rightRotate(a,13)^rightRotate(a,22);
+      const maj=(a&b)^(a&c)^(b&c);
+      const temp2=(S0+maj)|0;
+      h=g;g=f;f=e;e=(d+temp1)|0;d=c;c=b;b=a;a=(temp1+temp2)|0;
+    }
+    hash=hash.map((v,i)=>(v+[a,b,c,d,e,f,g,h][i])|0);
+  }
+  return hash.map(v=>(v>>>0).toString(16).padStart(8,'0')).join('');
 }
 
 async function fazerLogin(){
@@ -6022,15 +6078,17 @@ async function navDRE(){
     const r=receitasMes(d.getMonth()+1,d.getFullYear());
     if(r.fisioSist > 0) fisioHist.push(r.fisioSist);
   }
+
+  // ── Mês atual detalhado — deve vir ANTES do crescFisio ─────
+  const recAtual = receitasMes(mesAtual, anoAtual);
+
   // Crescimento = variação entre primeiro e último mês com dados / quantidade de meses
-  // Limita a crescimento máximo de 15% por mês do valor atual
+  // Limita a crescimento máximo de 10% do valor atual de fisio
   const crescBruto = fisioHist.length>=2
     ? (fisioHist[fisioHist.length-1]-fisioHist[0])/(fisioHist.length-1)
     : 0;
   const crescFisio = Math.min(Math.max(crescBruto, 0), recAtual.fisioSist * 0.10);
 
-  // ── Mês atual detalhado ────────────────────────────────────
-  const recAtual = receitasMes(mesAtual, anoAtual);
   const despExtAtual = despesasMes(mesAtual, anoAtual);
   const impostAtual  = Math.round(recAtual.total * TAXA_SIMPLES);
   const totalDesp    = TOTAL_FIXO + despExtAtual + impostAtual;
