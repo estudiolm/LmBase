@@ -1136,6 +1136,11 @@ function aplicarPermissoes(){
   const logsBtn = document.getElementById('btnLogs');
   const pontoTop = document.getElementById('btnPontoTop');
   const pontoRel = document.getElementById('btnPonto');
+  // Esconde itens de relatório para recepção
+  ['ni_fin_geral','ni_dre','ni_logs','btnFinGeral','btnDRE','btnLogs'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.style.display = perm.verFinGeral ? '' : 'none';
+  });
   if(finGeralBtn) finGeralBtn.style.display = perm.verFinGeral ? '' : 'none';
   if(dreBtn)      dreBtn.style.display      = perm.verFinGeral ? '' : 'none';
   if(logsBtn) logsBtn.style.display = perm.verFinGeral ? '' : 'none';
@@ -1157,7 +1162,8 @@ function checarPermissao(pagina){
   const perm = PERMISSOES[usuarioAtual.perfil] || PERMISSOES.recepcao;
   if(pagina==='p_fin' && !perm.verFinanceiro) return false;
   if(pagina==='fin_geral' && !perm.verFinGeral) return false;
-  if(pagina==='logs' && !perm.verFinGeral) return false;
+  if(pagina==='dre'       && !perm.verFinGeral) return false;
+  if(pagina==='logs'      && !perm.verFinGeral) return false;
   return true;
 }
 
@@ -5847,7 +5853,7 @@ const TOTAL_FIXO = DESPESAS_FIXAS.reduce((s,d)=>s+d.valor,0);
 // Receita fixa da Larissa domicílio (não está no banco)
 const LARISSA_FISIO_MENSAL = 1300 + 1800; // João + Elisangela
 
-const META_LUCRO = 40000;
+const META_LUCRO = 20000;
 const TAXA_SIMPLES = 0.06; // 6% faixa 1 Simples Nacional
 
 const CAT_CORES = {
@@ -5923,14 +5929,19 @@ async function navDRE(){
     return despExtra.filter(d=>d.mes===m&&d.ano===y).reduce((s,d)=>s+(parseFloat(d.valor)||0),0);
   }
 
-  // Calcula crescimento médio da fisio (últimos 3 meses)
+  // Crescimento médio da fisio (últimos 3 meses com dados) — conservador
   const fisioHist = [];
   for(let i=3;i>=1;i--){
     const d=new Date(anoAtual,mesAtual-1-i,1);
     const r=receitasMes(d.getMonth()+1,d.getFullYear());
-    fisioHist.push(r.fisio);
+    if(r.fisioSist > 0) fisioHist.push(r.fisioSist);
   }
-  const crescFisio = fisioHist.length>=2 ? (fisioHist[fisioHist.length-1]-fisioHist[0])/(fisioHist.length-1) : 200;
+  // Crescimento = variação entre primeiro e último mês com dados / quantidade de meses
+  // Limita a crescimento máximo de 15% por mês do valor atual
+  const crescBruto = fisioHist.length>=2
+    ? (fisioHist[fisioHist.length-1]-fisioHist[0])/(fisioHist.length-1)
+    : 0;
+  const crescFisio = Math.min(Math.max(crescBruto, 0), recAtual.fisioSist * 0.10);
 
   // ── Mês atual detalhado ────────────────────────────────────
   const recAtual = receitasMes(mesAtual, anoAtual);
@@ -6053,13 +6064,24 @@ async function navDRE(){
 function previsaoMes(m, y, recAtual, crescFisio, pags, vendas, sessoes){
   const agora=new Date();
   const diffMeses=(y-agora.getFullYear())*12+(m-(agora.getMonth()+1));
-  const pilates = Math.round(recAtual.pilates * (1 + diffMeses*0.01));
-  // Fisio estúdio cresce; domicílio fica fixo
-  const fisioSist = Math.max(0, Math.round(recAtual.fisioSist + crescFisio*diffMeses));
+
+  // Pilates: mantém estável (cresce muito devagar, ~0.5% ao mês)
+  const pilates = Math.round(recAtual.pilates * (1 + diffMeses*0.005));
+
+  // Fisio estúdio: cresce pelo crescimento médio mas com teto razoável
+  // Limita crescimento a no máximo 20% acima do mês atual
+  const crescimentoAplicado = Math.min(crescFisio, recAtual.fisioSist * 0.15);
+  const fisioSist = Math.max(recAtual.fisioSist, Math.round(recAtual.fisioSist + crescimentoAplicado * diffMeses));
+  const fisioSistComTeto = Math.min(fisioSist, recAtual.fisioSist * (1 + 0.2 * diffMeses));
+
+  // Fisio domicílio Larissa: fixo (João + Elisangela)
   const fisioLarissa = LARISSA_FISIO_MENSAL;
-  const fisio = fisioSist + fisioLarissa;
+  const fisio = fisioSistComTeto + fisioLarissa;
+
+  // Loja: média dos últimos meses conhecidos
   const loja = Math.round(recAtual.loja);
-  return{pilates,fisioSist,fisioLarissa,fisio,loja,total:pilates+fisio+loja};
+
+  return{pilates, fisioSist:fisioSistComTeto, fisioLarissa, fisio, loja, total:pilates+fisio+loja};
 }
 
 function dreRow(label, valor, cor, bold=false){
