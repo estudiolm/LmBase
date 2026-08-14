@@ -1224,6 +1224,7 @@ function aplicarPermissoes(){
   if(maisBtn) maisBtn.style.display = perm.verFinGeral ? '' : 'none';
   // Esconde itens de relatório para recepção
   ['ni_fin_geral','ni_dre','ni_logs','btnFinGeral','btnDRE','btnLogs'].forEach(id=>{
+    const el = document.getElementById(id);
     if(el) el.style.display = perm.verFinGeral ? '' : 'none';
   });
   if(finGeralBtn) finGeralBtn.style.display = perm.verFinGeral ? '' : 'none';
