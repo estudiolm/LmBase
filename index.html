@@ -786,7 +786,7 @@ select.fi {
     box-shadow: 0 -4px 24px rgba(0,0,0,.2) !important;
     background: var(--forest) !important;
   }
-  .brand,.nsep,#sepRelatorios,.sb>div:last-child,.sb-search { display:none !important; }
+  .brand,.nsep,#sepRelatorios,.sb>div:last-child,.sb-search,#ni_fin_geral,#ni_dre,#ni_logs { display:none !important; }
   #btnFinGeral,#btnLogs,#btnAgenda,#gcalStatus,#btnDRE { display:none !important; }
   .ni {
     flex-direction: column; gap: 3px;
@@ -811,6 +811,61 @@ select.fi {
     animation: slideUpModal var(--t-slow) var(--ease);
   }
   .btn { font-size: 12.5px; padding: 7.5px 16px; }
+
+  /* Botão Mais na barra mobile */
+  #btn_mobile_mais {
+    display: flex !important;
+    flex-direction: column; gap: 3px;
+    align-items: center; justify-content: center;
+    padding: 10px 8px; margin: 0;
+    border-radius: 0; width: auto !important; min-width: 54px;
+    font-size: 9px; font-weight: 500;
+    color: rgba(255,255,255,.5);
+    background: none; border: none; cursor: pointer;
+    font-family: var(--font);
+  }
+  #btn_mobile_mais i { font-size: 20px; color: rgba(255,255,255,.4); }
+  #btn_mobile_mais.act { border-top: 2px solid var(--gold); color: var(--gold-light); }
+  #btn_mobile_mais.act i { color: var(--gold); }
+
+  /* Menu "Mais" flutuante */
+  #mobile_mais_menu {
+    position: fixed;
+    bottom: 70px; left: 0; right: 0;
+    background: var(--forest);
+    border-radius: var(--r-2xl) var(--r-2xl) 0 0;
+    border-top: 1px solid rgba(255,255,255,.1);
+    z-index: 200;
+    padding: 8px 0 12px;
+    box-shadow: 0 -8px 32px rgba(0,0,0,.3);
+    animation: slideUpModal .25s var(--ease);
+    display: none;
+  }
+  #mobile_mais_menu.open { display: block; }
+  .mob-menu-item {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 24px;
+    color: rgba(255,255,255,.8);
+    font-size: 14px; font-weight: 500;
+    cursor: pointer;
+    border: none; background: none;
+    width: 100%; text-align: left;
+    font-family: var(--font);
+    transition: background .15s;
+  }
+  .mob-menu-item:hover, .mob-menu-item:active { background: rgba(255,255,255,.08); }
+  .mob-menu-item i { font-size: 20px; color: var(--gold); width: 24px; }
+  .mob-menu-label {
+    font-size: 11px; font-weight: 700;
+    color: rgba(255,255,255,.3); letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 12px 24px 4px;
+  }
+}
+
+/* Esconde botão Mais no desktop */
+@media (min-width: 769px) {
+  #btn_mobile_mais, #mobile_mais_menu { display: none !important; }
 }
 
 @keyframes slideUpModal {
@@ -901,6 +956,11 @@ select.fi {
     <button class="ni" id="btnAgenda" onclick="nav('gcal')" style="display:none"><i class="ti ti-brand-google"></i>Google Agenda</button>
     <div id="gcalStatus"></div>
 
+    <!-- Botão MAIS — só aparece mobile e só para admin -->
+    <button id="btn_mobile_mais" onclick="toggleMaisMobile()" style="display:none">
+      <i class="ti ti-dots-circle-horizontal"></i>Mais
+    </button>
+
     <!-- Usuário -->
     <div class="sb-user">
       <div class="sb-user-inner">
@@ -913,6 +973,29 @@ select.fi {
       </div>
     </div>
   </aside>
+
+  <!-- Menu "Mais" mobile (admin) -->
+  <div id="mobile_mais_menu" onclick="fecharMaisMobile()">
+    <div onclick="event.stopPropagation()">
+      <div class="mob-menu-label">Relatórios</div>
+      <button class="mob-menu-item" onclick="fecharMaisMobile();nav('fin_geral')">
+        <i class="ti ti-cash"></i>Financeiro Geral
+      </button>
+      <button class="mob-menu-item" onclick="fecharMaisMobile();nav('dre')">
+        <i class="ti ti-chart-pie"></i>DRE & Metas
+      </button>
+      <button class="mob-menu-item" onclick="fecharMaisMobile();nav('logs')">
+        <i class="ti ti-history"></i>Histórico
+      </button>
+      <button class="mob-menu-item" onclick="fecharMaisMobile();nav('ponto')">
+        <i class="ti ti-clock"></i>Controle de Ponto
+      </button>
+      <div class="mob-menu-label" style="margin-top:4px">Conta</div>
+      <button class="mob-menu-item" onclick="fecharMaisMobile();fazerLogout()" style="color:rgba(255,100,100,.8)">
+        <i class="ti ti-logout" style="color:rgba(255,100,100,.8)"></i>Sair
+      </button>
+    </div>
+  </div>
 
   <!-- ── CONTEÚDO PRINCIPAL ──────────────────────────── -->
   <main class="mn" id="mn"></main>
@@ -1136,9 +1219,11 @@ function aplicarPermissoes(){
   const logsBtn = document.getElementById('btnLogs');
   const pontoTop = document.getElementById('btnPontoTop');
   const pontoRel = document.getElementById('btnPonto');
+  // Botão "Mais" mobile — só admin
+  const maisBtn = document.getElementById('btn_mobile_mais');
+  if(maisBtn) maisBtn.style.display = perm.verFinGeral ? '' : 'none';
   // Esconde itens de relatório para recepção
   ['ni_fin_geral','ni_dre','ni_logs','btnFinGeral','btnDRE','btnLogs'].forEach(id=>{
-    const el=document.getElementById(id);
     if(el) el.style.display = perm.verFinGeral ? '' : 'none';
   });
   if(finGeralBtn) finGeralBtn.style.display = perm.verFinGeral ? '' : 'none';
@@ -6766,6 +6851,22 @@ async function verProntuario(nomePaciente){
       '<div class="mdf"><button class="btn btnp" onclick="fecharModal()">Fechar</button></div>'
     );
   } catch(e){alert('Erro: '+e.message);}
+}
+
+function toggleMaisMobile(){
+  const menu = document.getElementById('mobile_mais_menu');
+  const btn  = document.getElementById('btn_mobile_mais');
+  if(menu.classList.contains('open')){
+    menu.classList.remove('open');
+    btn.classList.remove('act');
+  } else {
+    menu.classList.add('open');
+    btn.classList.add('act');
+  }
+}
+function fecharMaisMobile(){
+  document.getElementById('mobile_mais_menu')?.classList.remove('open');
+  document.getElementById('btn_mobile_mais')?.classList.remove('act');
 }
 
 // UTILITÁRIOS
