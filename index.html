@@ -602,13 +602,20 @@ select.fi {
 
 /* ── Modais ──────────────────────────────────────────── */
 .ovlbg {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
   background: rgba(10,20,14,.45);
   backdrop-filter: blur(5px);
   -webkit-backdrop-filter: blur(5px);
-  z-index: 9999;
-  display: flex; align-items: center; justify-content: center;
+  z-index: 9999 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 20px;
   animation: fadeIn var(--t-fast) var(--ease);
   overflow-y: auto;
@@ -995,6 +1002,11 @@ select.fi {
         <i class="ti ti-logout" style="color:rgba(255,100,100,.8)"></i>Sair
       </button>
     </div>
+  </div>
+
+  <!-- ── OVERLAY MODAL ──────────────────────────────── -->
+  <div id="ovlbg" class="ovlbg" style="display:none" onclick="if(event.target.id==='ovlbg')fecharModal()">
+    <div class="modal" id="mdl"></div>
   </div>
 
   <!-- ── CONTEÚDO PRINCIPAL ──────────────────────────── -->
@@ -1971,7 +1983,7 @@ async function excluirEvento(){
       );
       // Aguarda fechamento do modal
       const check = setInterval(()=>{
-        if(document.getElementById('ovlbg').style.display==='none'){
+        if(!document.getElementById('ovlbg') || document.getElementById('ovlbg').style.display==='none'){
           clearInterval(check);
           resolve(window._excluirEscopo||'cancel');
         }
@@ -4015,7 +4027,9 @@ function renderFPacientes(dados){
     '<button class="tab" onclick="navFAltas()">Com alta ('+altas+')</button>'+
     '</div>'+
     '<div class="tb"><div style="margin-left:auto">'+
-    '<button class="btn btne" onclick="abrirNovoPaciente()"><i class="ti ti-plus"></i> Novo paciente</button></div></div>'+
+    '<button class="btn btne" onclick="abrirNovoPaciente()"><i class="ti ti-plus"></i> Novo paciente</button>'+
+    '<button class="btn btnb" onclick="abrirSessaoAvulsa()"><i class="ti ti-bolt"></i> Sessão avulsa</button>'+
+    '</div></div>'+
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">'+
     dados.map((p,i)=>{
       const pct=p.sessoes?Math.min(100,Math.round(p.realizadas/p.sessoes*100)):null;
@@ -4631,7 +4645,7 @@ async function confirmarPagamento(){
   const forma = document.getElementById('pg_forma').value;
   if(!aluno||!valor){ alert('Preencha aluno e valor.'); return; }
   const btn=document.getElementById('pg_btn');
-  btn.disabled=true; btn.textContent='Salvando…';
+  if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
 
   const hoje = new Date();
   const pad  = n=>String(n).padStart(2,'0');
@@ -4724,11 +4738,12 @@ async function confirmarPagamento(){
 
 // ── REGISTRAR SESSÃO FISIO NO BANCO ───────────────────────
 async function confirmarSessao(){
-  const nome = document.getElementById('fs_nome').value;
-  const data = document.getElementById('fs_data').value;
+  const nome = document.getElementById('fs_nome')?.value;
+  const data = document.getElementById('fs_data')?.value;
   const obs  = document.getElementById('fs_obs')?.value||null;
   const btn  = document.getElementById('fs_btn');
-  btn.disabled=true; btn.textContent='Salvando…';
+  if(!nome||!data){ alert('Preencha paciente e data.'); return; }
+  if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
   try {
     const rows = await sbGet('pacientes_fisio','id');
     const pac  = rows.find(r=>r.nome===nome);
@@ -4930,6 +4945,113 @@ function abrirNovoPaciente(){
   '<div class="fr2"><div><label class="fl">Telefone</label><input class="fi" id="fp_tel" placeholder="(11) 9xxxx-xxxx"></div>'+
   '<div><label class="fl">Sessões contratadas</label><input class="fi" id="fp_sess" type="number" placeholder="10"></div></div>'+
   '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btne" id="fp_btn" onclick="confirmarNovoPaciente()">Salvar</button></div>');
+}
+
+function abrirSessaoAvulsa(){
+  const hoje=new Date();
+  const dd=String(hoje.getDate()).padStart(2,'0');
+  const mm=String(hoje.getMonth()+1).padStart(2,'0');
+  const yy=hoje.getFullYear();
+
+  // Preço: R$160 agora, R$180 a partir do próximo mês
+  const proximoMes = new Date(hoje.getFullYear(), hoje.getMonth()+1, 1);
+  const precoAvulsa = 160; // atual
+  const precoProximo = 180; // próximo mês
+
+  abrirModal(
+    '<div class="mdt"><i class="ti ti-bolt" style="color:var(--gold);margin-right:8px"></i>Sessão avulsa</div>'+
+    '<div style="background:var(--gold-ultra);border:1px solid var(--gold-muted);border-radius:var(--r-md);padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--text-2)">'+
+    '<i class="ti ti-info-circle" style="color:var(--gold-dark);margin-right:4px"></i>'+
+    'Sessão única sem plano · Valor atual: <strong>R$ 160</strong> · A partir de '+
+    ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][proximoMes.getMonth()]+'/'+proximoMes.getFullYear()+': <strong>R$ 180</strong>'+
+    '</div>'+
+
+    '<label class="fl">Nome do paciente *</label>'+
+    '<input class="fi" id="av_nome" placeholder="Ex: Maria Silva">'+
+
+    '<div class="fr2">'+
+    '<div><label class="fl">Data da sessão</label><input class="fi" id="av_data" type="date" value="'+yy+'-'+mm+'-'+dd+'" onchange="atualizarPrecoAvulsa(this.value)"></div>'+
+    '<div><label class="fl">Valor cobrado R$</label><input class="fi" id="av_valor" type="number" value="'+precoAvulsa+'"></div>'+
+    '</div>'+
+
+    '<div class="fr2">'+
+    '<div><label class="fl">Forma de pgto</label><select class="fi" id="av_pgto">'+
+      '<option>PIX</option><option>Cartão débito</option><option>Cartão crédito</option><option>Dinheiro</option>'+
+    '</select></div>'+
+    '<div><label class="fl">Fisioterapeuta</label><select class="fi" id="av_fisio">'+
+      '<option value="Larissa">Larissa (estúdio)</option>'+
+      '<option value="Domicilio">Larissa (domicílio)</option>'+
+    '</select></div>'+
+    '</div>'+
+
+    '<label class="fl">Observações</label>'+
+    '<textarea class="fi" id="av_obs" rows="2" placeholder="Queixa, procedimento, evolução…"></textarea>'+
+
+    '<div class="mdf">'+
+    '<button class="btn" onclick="fecharModal()">Cancelar</button>'+
+    '<button class="btn btnp" id="av_btn" onclick="confirmarSessaoAvulsa()"><i class="ti ti-check"></i> Registrar</button>'+
+    '</div>'
+  );
+}
+
+function atualizarPrecoAvulsa(dataStr){
+  if(!dataStr) return;
+  const hoje = new Date();
+  const [y,m] = dataStr.split('-').map(Number);
+  // A partir do próximo mês → R$180
+  const isProximoMes = y > hoje.getFullYear() || (y === hoje.getFullYear() && m > hoje.getMonth()+1);
+  const campo = document.getElementById('av_valor');
+  if(campo) campo.value = isProximoMes ? 180 : 160;
+}
+
+async function confirmarSessaoAvulsa(){
+  const nome  = document.getElementById('av_nome')?.value.trim();
+  const data  = document.getElementById('av_data')?.value;
+  const valor = parseFloat(document.getElementById('av_valor')?.value)||145;
+  const pgto  = document.getElementById('av_pgto')?.value;
+  const fisio = document.getElementById('av_fisio')?.value;
+  const obs   = document.getElementById('av_obs')?.value||null;
+  const btn   = document.getElementById('av_btn');
+
+  if(!nome){ alert('Informe o nome do paciente.'); return; }
+  if(!data){ alert('Informe a data da sessão.'); return; }
+  if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
+
+  try {
+    // Salva como sessão avulsa — paciente_id null, tipo 'avulso'
+    await sbInsert('sessoes_fisio',{
+      paciente_id:   null,
+      paciente_nome: nome,
+      data_sessao:   data,
+      observacao:    (obs?obs+' ':'')+`[Avulsa · ${pgto} · R$${valor}${fisio==='Domicilio'?' · domicílio':''}]`
+    });
+
+    await registrarLog('registrou sessão avulsa','sessoes_fisio',
+      nome+' — '+fR(valor)+' via '+pgto+' em '+data+(fisio==='Domicilio'?' (domicílio)':''));
+
+    fecharModal();
+
+    // Mostra confirmação rápida
+    set(document.getElementById('mn').innerHTML);
+    setTimeout(()=>{
+      abrirModal(
+        '<div style="text-align:center;padding:16px">'+
+        '<div style="width:56px;height:56px;border-radius:50%;background:var(--ok-bg);display:flex;align-items:center;justify-content:center;margin:0 auto 14px">'+
+        '<i class="ti ti-check" style="font-size:28px;color:var(--ok)"></i></div>'+
+        '<div style="font-family:var(--font-serif);font-size:20px;font-weight:500;margin-bottom:8px">Sessão registrada!</div>'+
+        '<div style="font-size:13px;color:var(--text-2);margin-bottom:6px"><strong>'+nome+'</strong></div>'+
+        '<div style="font-size:13px;color:var(--text-3)">'+fR(valor)+' · '+pgto+'</div>'+
+        '<div class="mdf" style="justify-content:center;margin-top:20px">'+
+        '<button class="btn btne" onclick="fecharModal();abrirSessaoAvulsa()"><i class="ti ti-bolt"></i> Nova avulsa</button>'+
+        '<button class="btn btnp" onclick="fecharModal()">Fechar</button>'+
+        '</div></div>'
+      );
+    }, 100);
+
+  } catch(e){
+    if(btn){ btn.disabled=false; btn.textContent='Registrar'; }
+    alert('Erro: '+e.message);
+  }
 }
 
 function abrirRegistrarSessao(nome){
@@ -5460,14 +5582,15 @@ function verTurma(d,hr){
 function abrirModal(h){
   const mdl = document.getElementById('mdl');
   const ovl = document.getElementById('ovlbg');
+  if(!mdl||!ovl){ console.error('Modal elements not found'); return; }
   mdl.innerHTML = h;
   ovl.style.display = 'flex';
   document.body.style.overflow = 'hidden';
-  // Sempre volta ao topo do modal
   setTimeout(()=>{ mdl.scrollTop = 0; ovl.scrollTop = 0; }, 10);
 }
 function fecharModal(){
-  document.getElementById('ovlbg').style.display = 'none';
+  const ovl = document.getElementById('ovlbg');
+  if(ovl) ovl.style.display = 'none';
   document.body.style.overflow = '';
 }
 
