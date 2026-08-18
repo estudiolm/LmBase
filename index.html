@@ -6298,23 +6298,42 @@ async function navDRE(){
   const recJul = receitasMes(7, 2026);
   const recAgo = receitasMes(8, 2026);
 
-  // Média de pilates entre Jul e Ago
-  const pilatesBase = Math.round((recJul.pilates + recAgo.pilates) / 2);
-  // Fisio: usa Ago se tiver dados, senão Jul; já inclui Larissa
-  const fisioSistBase = recAgo.fisioSist > 0 ? recAgo.fisioSist : recJul.fisioSist;
-  // Crescimento mensal da fisio (Jul → Ago)
-  const crescFisio = recJul.fisioSist > 0 && recAgo.fisioSist > 0
-    ? Math.max(0, recAgo.fisioSist - recJul.fisioSist)
-    : 500;
-  // Loja: média Jul+Ago
-  const lojaBase = Math.round((recJul.loja + recAgo.loja) / 2);
+  // Agosto é parcial (só ~14 dias passados) — projetar o mês completo
+  const hoje = new Date();
+  const diasPassadosAgo = hoje.getMonth()===7 ? hoje.getDate() : 31;
+  const fatorProjecaoAgo = diasPassadosAgo > 0 ? 31/diasPassadosAgo : 1;
+  const recAgoCompleto = {
+    pilates:   recAgo.pilates,  // pilates já é completo (pagamentos não dependem de dias)
+    fisioSist: Math.round(recAgo.fisioSist * fatorProjecaoAgo),
+    loja:      Math.round(recAgo.loja * fatorProjecaoAgo),
+  };
+
+  // BASE: usa Julho como referência principal (mês completo mais recente)
+  // Ago projetado como validação do crescimento
+  const pilatesBase = recJul.pilates; // Julho completo
+  const fisioSistBase = recJul.fisioSist; // Julho completo como base
+
+  // Crescimento mensal da fisio: diferença Jul → Ago projetado
+  const crescFisio = recAgo.fisioSist > 0 && recJul.fisioSist > 0
+    ? Math.max(0, Math.round((recAgoCompleto.fisioSist - recJul.fisioSist) * 0.7)) // 70% conservador
+    : 300;
+
+  // Loja: usa Julho como base (R$5694) — Ago parcial não representa
+  const lojaBase = recJul.loja;
+
+  // Margem da loja: 38% (custo + frete + embalagem + desconto)
+  const MARGEM_LOJA = 0.38;
 
   // ── Mês atual detalhado ─────────────────────────────────────
   const recAtual = receitasMes(mesAtual, anoAtual);
 
+  // Custo da loja = 62% da receita (margem 38%)
+  const custoLojaAtual = Math.round(recAtual.loja * (1 - MARGEM_LOJA));
+  const lucroLojaAtual = Math.round(recAtual.loja * MARGEM_LOJA);
+
   const despExtAtual = despesasMes(mesAtual, anoAtual);
   const impostAtual  = Math.round(recAtual.total * TAXA_SIMPLES);
-  const totalDesp    = TOTAL_FIXO + despExtAtual + impostAtual;
+  const totalDesp    = TOTAL_FIXO + despExtAtual + impostAtual + custoLojaAtual;
   const lucroAtual   = recAtual.total - totalDesp;
 
   // % da meta (mês atual)
@@ -6333,7 +6352,7 @@ async function navDRE(){
   let recAnual=0, despAnual=0, lucroAnual=0;
   for(let mi=1;mi<=12;mi++){
     const rAnual = (mi>mesAtual) ? previsaoMes(mi,anoAtual,pilatesBase,fisioSistBase,crescFisio,lojaBase) : receitasMes(mi,anoAtual);
-    const dAnual = TOTAL_FIXO + despesasMes(mi,anoAtual) + Math.round(rAnual.total*TAXA_SIMPLES);
+    const dAnual = TOTAL_FIXO + despesasMes(mi,anoAtual) + Math.round(rAnual.total*TAXA_SIMPLES) + Math.round(rAnual.loja*(1-MARGEM_LOJA));
     recAnual += rAnual.total; despAnual += dAnual; lucroAnual += rAnual.total - dAnual;
   }
 
@@ -6385,7 +6404,7 @@ async function navDRE(){
   dreRow('Pilates',fR(recAtual.pilates),'#2D7A3A')+
   dreRow('Fisio (estúdio)',fR(recAtual.fisioSist),'#2D7A3A')+
   dreRow('Fisio domicílio — Larissa',fR(LARISSA_FISIO_MENSAL),'#2D7A3A')+
-  dreRow('Loja',fR(recAtual.loja),'#2D7A3A')+
+  dreRow('Loja (vendas brutas)',fR(recAtual.loja),'#2D7A3A')+
   '<div style="border-top:2px solid var(--border);margin:10px 0"></div>'+
   dreRow('RECEITA BRUTA',fR(recAtual.total),'#2D7A3A',true)+
   '</div>'+
@@ -6394,12 +6413,15 @@ async function navDRE(){
   '<div style="background:var(--white);border:1px solid var(--border);border-radius:var(--r-lg);padding:18px">'+
   '<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">📉 Despesas — '+nomesMes[mesAtual]+'</div>'+
   DESPESAS_FIXAS.map(d=>dreRow(d.descricao,fR(d.valor),'#C0392B')).join('')+
+  dreRow('Custo das roupas (62% vendas)',fR(custoLojaAtual),'#C0392B')+
   dreRow('Simples Nacional (6%)',fR(impostAtual),'#7D6608')+
   (despExtAtual>0?dreRow('Despesas extras',fR(despExtAtual),'#C0392B'):'')+
   '<div style="border-top:2px solid var(--border);margin:10px 0"></div>'+
   dreRow('TOTAL DESPESAS',fR(totalDesp),'#C0392B',true)+
   '<div style="border-top:2px solid var(--border);margin:10px 0"></div>'+
   dreRow('LUCRO LÍQUIDO',fR(lucroAtual),lucroAtual>=0?'#2D7A3A':'#C0392B',true)+
+  '<div style="font-size:11px;color:var(--text-3);margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">'+
+  '📦 Margem loja: '+fR(lucroLojaAtual)+' (38% de '+fR(recAtual.loja)+')</div>'+
   '<button class="btn btns" style="margin-top:10px;width:100%;justify-content:center" onclick="abrirLancarDespesa()"><i class="ti ti-plus"></i> Lançar despesa extra</button>'+
   '</div></div>'+
 
@@ -6414,8 +6436,9 @@ async function navDRE(){
     const isAtual  = m===mesAtual&&y===anoAtual;
     const rec = isFuturo ? previsaoMes(m,y,pilatesBase,fisioSistBase,crescFisio,lojaBase) : receitasMes(m,y);
     const despE= isFuturo ? 0 : despesasMes(m,y);
+    const custoLoja = Math.round(rec.loja * (1 - MARGEM_LOJA));
     const imp  = Math.round(rec.total*TAXA_SIMPLES);
-    const desp = TOTAL_FIXO + despE + imp;
+    const desp = TOTAL_FIXO + despE + imp + custoLoja;
     const lucro= rec.total - desp;
     return '<tr style="'+(isAtual?'background:rgba(201,169,110,.06);font-weight:600':isFuturo?'background:rgba(45,122,58,.03);color:var(--text-2);font-style:italic':'')+'">'+
     '<td style="white-space:nowrap">'+nomesMes[m]+' '+y+(isAtual?' <span class="bdg ba" style="font-size:9px">atual</span>':isFuturo?' <span class="bdg bg" style="font-size:9px">previsão</span>':'')+'</td>'+
@@ -6440,7 +6463,7 @@ async function navDRE(){
   '</tr>'+
   '</tbody></table></div>'+
   '<div style="font-size:11px;color:var(--text-3);margin-top:6px">'+
-  '<i class="ti ti-info-circle"></i> Base: média Jul+Ago 2026 · Crescimento fisio: +'+fR(crescFisio)+'/mês · Despesas fixas: '+fR(TOTAL_FIXO)+'/mês'+
+  '<i class="ti ti-info-circle"></i> Base: Julho/2026 (mês completo) · Crescimento fisio: +'+fR(crescFisio)+'/mês · Despesas fixas: '+fR(TOTAL_FIXO)+'/mês · Margem loja: 38%'+
   '</div>'
   );
 }
@@ -6449,16 +6472,21 @@ function previsaoMes(m, y, pilatesBase, fisioSistBase, crescFisio, lojaBase){
   const agora=new Date();
   const diffMeses=(y-agora.getFullYear())*12+(m-(agora.getMonth()+1));
 
-  // Pilates: estável com leve crescimento
-  const pilates = Math.round(pilatesBase * (1 + diffMeses*0.004));
+  // Pilates: muito estável, varia pouco mês a mês (~0.3%)
+  const pilates = Math.round(pilatesBase * (1 + diffMeses*0.003));
 
-  // Fisio estúdio: cresce pelo crescimento mensal observado (Jul→Ago)
-  const fisioSist = Math.round(Math.max(fisioSistBase, fisioSistBase + crescFisio * diffMeses));
+  // Fisio estúdio: cresce pelo ritmo observado (Jul→Ago conservador)
+  // diffMeses=1 = Set, diffMeses=2 = Out, etc
+  const fisioSist = Math.round(fisioSistBase + crescFisio * diffMeses);
+
+  // Domicílio Larissa: sempre fixo
   const fisioLarissa = LARISSA_FISIO_MENSAL;
   const fisio = fisioSist + fisioLarissa;
 
-  // Loja: estável (média Jul+Ago)
-  const loja = lojaBase;
+  // Loja: usa base de Julho — pode variar ±10% sazonalmente
+  // Segundo semestre tende a ser mais forte (coleções novas)
+  const fatorLoja = m >= 9 ? 1.05 : 1.0; // leve alta no 2o sem
+  const loja = Math.round(lojaBase * fatorLoja);
 
   return{pilates, fisioSist, fisioLarissa, fisio, loja, total:pilates+fisio+loja};
 }
