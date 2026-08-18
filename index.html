@@ -4025,8 +4025,9 @@ function renderFPacientes(dados){
     '<div class="tabs">'+
     '<button class="tab act acte" onclick="navFPacientes()">Em tratamento ('+dados.length+')</button>'+
     '<button class="tab" onclick="navFAltas()">Com alta ('+altas+')</button>'+
+    '<button class="tab" onclick="navFAvulsas()"><i class="ti ti-bolt" style="font-size:11px"></i> Avulsas</button>'+
     '</div>'+
-    '<div class="tb"><div style="margin-left:auto">'+
+    '<div class="tb"><div style="margin-left:auto;display:flex;gap:8px">'+
     '<button class="btn btne" onclick="abrirNovoPaciente()"><i class="ti ti-plus"></i> Novo paciente</button>'+
     '<button class="btn btnb" onclick="abrirSessaoAvulsa()"><i class="ti ti-bolt"></i> Sessão avulsa</button>'+
     '</div></div>'+
@@ -4045,6 +4046,104 @@ function renderFPacientes(dados){
   window._fisioListaAtual = dados;
 }
 
+async function navFAvulsas(){
+  const todas  = window._fisioCache||FISIO;
+  const ativos = todas.filter(p=>p.status!=='alta'&&p.s!=='alta').length;
+  const altas  = todas.filter(p=>p.status==='alta'||p.s==='alta').length;
+
+  set(
+    '<div class="pt">Pacientes</div>'+
+    '<div class="ps">Sessões avulsas — sem plano fixo</div>'+
+    '<div class="tabs">'+
+    '<button class="tab" onclick="navFPacientes()">Em tratamento ('+ativos+')</button>'+
+    '<button class="tab" onclick="navFAltas()">Com alta ('+altas+')</button>'+
+    '<button class="tab actb act" onclick="navFAvulsas()"><i class="ti ti-bolt" style="font-size:11px"></i> Avulsas</button>'+
+    '</div>'+
+    '<div class="tb"><button class="btn btnb" onclick="abrirSessaoAvulsa()"><i class="ti ti-bolt"></i> Nova sessão avulsa</button></div>'+
+    '<div style="display:flex;align-items:center;justify-content:center;height:80px">'+
+    '<div style="width:20px;height:20px;border:2px solid var(--border-md);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite"></div></div>'
+  );
+
+  try {
+    // Busca sessões com paciente_id null (avulsas)
+    const r = await fetchWithTimeout(
+      `${SB_URL}/rest/v1/sessoes_fisio?paciente_id=is.null&order=data_sessao.desc&limit=200`,
+      {headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}}
+    );
+    const avulsas = await r.json();
+
+    // Agrupa por mês
+    const porMes = {};
+    const nomesMes=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    avulsas.forEach(s=>{
+      const iso = String(s.data_sessao||'').split('T')[0];
+      const [y,m,d] = iso.split('-');
+      const key = (m||'00')+'/'+(y||'0000');
+      if(!porMes[key]) porMes[key]=[];
+      porMes[key].push({...s, dFmt: iso?d+'/'+m+'/'+(y||'').slice(2):'—'});
+    });
+
+    const meses = Object.entries(porMes).sort((a,b)=>b[0].localeCompare(a[0]));
+    const totalMes = avulsas.filter(s=>{
+      const iso=String(s.data_sessao||'').split('T')[0];
+      const [y,m]=iso.split('-');
+      const agora=new Date();
+      return parseInt(m)===(agora.getMonth()+1)&&parseInt(y)===agora.getFullYear();
+    }).length;
+
+    set(
+      '<div class="pt">Pacientes</div>'+
+      '<div class="ps">Sessões avulsas · '+avulsas.length+' total · '+totalMes+' este mês</div>'+
+      '<div class="tabs">'+
+      '<button class="tab" onclick="navFPacientes()">Em tratamento ('+ativos+')</button>'+
+      '<button class="tab" onclick="navFAltas()">Com alta ('+altas+')</button>'+
+      '<button class="tab actb act" onclick="navFAvulsas()"><i class="ti ti-bolt" style="font-size:11px"></i> Avulsas ('+avulsas.length+')</button>'+
+      '</div>'+
+      '<div class="tb"><button class="btn btnb" onclick="abrirSessaoAvulsa()"><i class="ti ti-bolt"></i> Nova sessão avulsa</button>'+
+      '<div style="margin-left:auto;font-size:12px;color:var(--text-3)">'+totalMes+' sessões este mês</div></div>'+
+
+      (avulsas.length===0?
+        '<div style="text-align:center;padding:48px;color:var(--text-3)">'+
+        '<i class="ti ti-bolt" style="font-size:40px;opacity:.2;display:block;margin-bottom:12px"></i>'+
+        'Nenhuma sessão avulsa registrada ainda</div>'
+      :
+        meses.map(([key, sess])=>{
+          const [mm,yy]=key.split('/');
+          const mesNome = nomesMes[parseInt(mm)]||mm;
+          return '<div style="margin-bottom:20px">'+
+          '<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.09em;margin-bottom:10px">'+
+          mesNome+' '+yy+' <span style="font-weight:400;color:var(--text-4)">('+sess.length+' sessões)</span></div>'+
+          '<div class="tw"><table><thead><tr>'+
+          '<th>Paciente</th><th>Data</th><th>Valor</th><th>Detalhes</th>'+
+          '</tr></thead><tbody>'+
+          sess.map(s=>{
+            // Extrai valor e forma do campo observacao
+            const obs = s.observacao||'';
+            const valorMatch = obs.match(/R\$(\d+)/);
+            const valor = valorMatch ? 'R$ '+valorMatch[1] : '—';
+            const pgtoMatch = obs.match(/\[(Avulsa · ([^·]+))/);
+            const pgto = pgtoMatch ? pgtoMatch[2].trim() : '';
+            const isDomicilio = obs.includes('domicílio');
+            const obsLimpa = obs.replace(/\[Avulsa[^\]]*\]/,'').trim();
+            return '<tr>'+
+            '<td style="font-weight:500">'+s.paciente_nome+'</td>'+
+            '<td style="color:var(--text-2)">'+s.dFmt+'</td>'+
+            '<td style="font-weight:600;color:var(--ok)">'+valor+'</td>'+
+            '<td style="font-size:12px;color:var(--text-3)">'+
+            (pgto?'<span class="bdg bx" style="margin-right:4px">'+pgto+'</span>':'')+
+            (isDomicilio?'<span class="bdg bb" style="margin-right:4px">Domicílio</span>':'')+
+            (obsLimpa?'<span style="font-style:italic">'+obsLimpa+'</span>':'')+
+            '</td></tr>';
+          }).join('')+
+          '</tbody></table></div></div>';
+        }).join('')
+      )
+    );
+  } catch(e){
+    set(document.getElementById('mn').innerHTML.replace('Carregando…','Erro: '+e.message));
+  }
+}
+
 function navFAltas(){
   const todas  = window._fisioCache||FISIO;
   const altas  = todas.filter(p=>p.status==='alta'||p.s==='alta');
@@ -4056,6 +4155,7 @@ function navFAltas(){
     '<div class="tabs">'+
     '<button class="tab" onclick="navFPacientes()">Em tratamento ('+ativos+')</button>'+
     '<button class="tab actb act" onclick="navFAltas()">Com alta ('+altas.length+')</button>'+
+    '<button class="tab" onclick="navFAvulsas()"><i class="ti ti-bolt" style="font-size:11px"></i> Avulsas</button>'+
     '</div>'+
     (altas.length?
     '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">'+
@@ -6194,23 +6294,23 @@ async function navDRE(){
     return despExtra.filter(d=>d.mes===m&&d.ano===y).reduce((s,d)=>s+(parseFloat(d.valor)||0),0);
   }
 
-  // Crescimento médio da fisio (últimos 3 meses com dados) — conservador
-  const fisioHist = [];
-  for(let i=3;i>=1;i--){
-    const d=new Date(anoAtual,mesAtual-1-i,1);
-    const r=receitasMes(d.getMonth()+1,d.getFullYear());
-    if(r.fisioSist > 0) fisioHist.push(r.fisioSist);
-  }
+  // ── BASE DA PREVISÃO: média Jul+Ago (meses mais completos) ──
+  const recJul = receitasMes(7, 2026);
+  const recAgo = receitasMes(8, 2026);
 
-  // ── Mês atual detalhado — deve vir ANTES do crescFisio ─────
+  // Média de pilates entre Jul e Ago
+  const pilatesBase = Math.round((recJul.pilates + recAgo.pilates) / 2);
+  // Fisio: usa Ago se tiver dados, senão Jul; já inclui Larissa
+  const fisioSistBase = recAgo.fisioSist > 0 ? recAgo.fisioSist : recJul.fisioSist;
+  // Crescimento mensal da fisio (Jul → Ago)
+  const crescFisio = recJul.fisioSist > 0 && recAgo.fisioSist > 0
+    ? Math.max(0, recAgo.fisioSist - recJul.fisioSist)
+    : 500;
+  // Loja: média Jul+Ago
+  const lojaBase = Math.round((recJul.loja + recAgo.loja) / 2);
+
+  // ── Mês atual detalhado ─────────────────────────────────────
   const recAtual = receitasMes(mesAtual, anoAtual);
-
-  // Crescimento = variação entre primeiro e último mês com dados / quantidade de meses
-  // Limita a crescimento máximo de 10% do valor atual de fisio
-  const crescBruto = fisioHist.length>=2
-    ? (fisioHist[fisioHist.length-1]-fisioHist[0])/(fisioHist.length-1)
-    : 0;
-  const crescFisio = Math.min(Math.max(crescBruto, 0), recAtual.fisioSist * 0.10);
 
   const despExtAtual = despesasMes(mesAtual, anoAtual);
   const impostAtual  = Math.round(recAtual.total * TAXA_SIMPLES);
@@ -6295,8 +6395,7 @@ async function navDRE(){
   '<button class="btn btns" style="margin-top:10px;width:100%;justify-content:center" onclick="abrirLancarDespesa()"><i class="ti ti-plus"></i> Lançar despesa extra</button>'+
   '</div></div>'+
 
-  // ── HISTÓRICO + PREVISÃO ──────────────────────────────────
-  '<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Histórico & Previsão</div>'+
+  // ── HISTÓRICO + PREVISÃO<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Histórico & Previsão</div>'+
   '<div class="tw"><table><thead><tr>'+
   '<th>Mês</th><th>Pilates</th><th>Fisio</th><th>Loja</th><th>Receita Bruta</th><th>Despesas</th><th>Imposto</th><th style="font-weight:700">Lucro Líquido</th>'+
   '</tr></thead><tbody>'+
@@ -6304,7 +6403,7 @@ async function navDRE(){
     const[m,y]=key.split('/').map(Number);
     const isFuturo = y>anoAtual||(y===anoAtual&&m>mesAtual);
     const isAtual  = m===mesAtual&&y===anoAtual;
-    const rec = isFuturo ? previsaoMes(m,y,recAtual,crescFisio,pags,vendas,sessoes) : receitasMes(m,y);
+    const rec = isFuturo ? previsaoMes(m,y,pilatesBase,fisioSistBase,crescFisio,lojaBase) : receitasMes(m,y);
     const despE= isFuturo ? 0 : despesasMes(m,y);
     const imp  = Math.round(rec.total*TAXA_SIMPLES);
     const desp = TOTAL_FIXO + despE + imp;
@@ -6321,34 +6420,38 @@ async function navDRE(){
     (lucro>=META_LUCRO?' ✓':'')+
     '</td></tr>';
   }).join('')+
+  // Linha projeção anual
+  '<tr style="background:var(--forest)" class="sum-row">'+
+  '<td style="color:var(--gold-light);font-weight:700">📅 2026 completo</td>'+
+  '<td colspan="3" style="color:rgba(255,255,255,.5);font-size:11px">Projeção Jan–Dez 2026</td>'+
+  '<td style="color:var(--gold-light);font-weight:700">'+fR(recAnual)+'</td>'+
+  '<td style="color:#E07070;font-weight:700">'+fR(despAnual)+'</td>'+
+  '<td style="color:rgba(255,255,255,.5)">—</td>'+
+  '<td style="font-weight:700;color:'+(lucroAnual>0?'#7EE8A2':'#E07070')+'">'+fR(lucroAnual)+'</td>'+
+  '</tr>'+
   '</tbody></table></div>'+
   '<div style="font-size:11px;color:var(--text-3);margin-top:6px">'+
-  '<i class="ti ti-info-circle"></i> Previsão de fisio baseada no crescimento médio dos últimos 3 meses ('+fR(crescFisio)+'/mês). Despesas fixas aplicadas em todos os meses.'+
+  '<i class="ti ti-info-circle"></i> Base: média Jul+Ago 2026 · Crescimento fisio: +'+fR(crescFisio)+'/mês · Despesas fixas: '+fR(TOTAL_FIXO)+'/mês'+
   '</div>'
   );
 }
 
-function previsaoMes(m, y, recAtual, crescFisio, pags, vendas, sessoes){
+function previsaoMes(m, y, pilatesBase, fisioSistBase, crescFisio, lojaBase){
   const agora=new Date();
   const diffMeses=(y-agora.getFullYear())*12+(m-(agora.getMonth()+1));
 
-  // Pilates: mantém estável (cresce muito devagar, ~0.5% ao mês)
-  const pilates = Math.round(recAtual.pilates * (1 + diffMeses*0.005));
+  // Pilates: estável com leve crescimento
+  const pilates = Math.round(pilatesBase * (1 + diffMeses*0.004));
 
-  // Fisio estúdio: cresce pelo crescimento médio mas com teto razoável
-  // Limita crescimento a no máximo 20% acima do mês atual
-  const crescimentoAplicado = Math.min(crescFisio, recAtual.fisioSist * 0.15);
-  const fisioSist = Math.max(recAtual.fisioSist, Math.round(recAtual.fisioSist + crescimentoAplicado * diffMeses));
-  const fisioSistComTeto = Math.min(fisioSist, recAtual.fisioSist * (1 + 0.2 * diffMeses));
-
-  // Fisio domicílio Larissa: fixo (João + Elisangela)
+  // Fisio estúdio: cresce pelo crescimento mensal observado (Jul→Ago)
+  const fisioSist = Math.round(Math.max(fisioSistBase, fisioSistBase + crescFisio * diffMeses));
   const fisioLarissa = LARISSA_FISIO_MENSAL;
-  const fisio = fisioSistComTeto + fisioLarissa;
+  const fisio = fisioSist + fisioLarissa;
 
-  // Loja: média dos últimos meses conhecidos
-  const loja = Math.round(recAtual.loja);
+  // Loja: estável (média Jul+Ago)
+  const loja = lojaBase;
 
-  return{pilates, fisioSist:fisioSistComTeto, fisioLarissa, fisio, loja, total:pilates+fisio+loja};
+  return{pilates, fisioSist, fisioLarissa, fisio, loja, total:pilates+fisio+loja};
 }
 
 function dreRow(label, valor, cor, bold=false){
