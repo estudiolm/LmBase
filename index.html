@@ -6329,6 +6329,14 @@ async function navDRE(){
 
   const nomesMes=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
+  // ── Projeção anual 2026 ─────────────────────────────────────
+  let recAnual=0, despAnual=0, lucroAnual=0;
+  for(let mi=1;mi<=12;mi++){
+    const rAnual = (mi>mesAtual) ? previsaoMes(mi,anoAtual,pilatesBase,fisioSistBase,crescFisio,lojaBase) : receitasMes(mi,anoAtual);
+    const dAnual = TOTAL_FIXO + despesasMes(mi,anoAtual) + Math.round(rAnual.total*TAXA_SIMPLES);
+    recAnual += rAnual.total; despAnual += dAnual; lucroAnual += rAnual.total - dAnual;
+  }
+
   // ── RENDER ────────────────────────────────────────────────
   set(
   '<div class="pt">DRE & Metas</div>'+
@@ -6395,7 +6403,8 @@ async function navDRE(){
   '<button class="btn btns" style="margin-top:10px;width:100%;justify-content:center" onclick="abrirLancarDespesa()"><i class="ti ti-plus"></i> Lançar despesa extra</button>'+
   '</div></div>'+
 
-  // ── HISTÓRICO + PREVISÃO<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Histórico & Previsão</div>'+
+  // ── HISTÓRICO + PREVISÃO
+  '<div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Histórico & Previsão</div>'+
   '<div class="tw"><table><thead><tr>'+
   '<th>Mês</th><th>Pilates</th><th>Fisio</th><th>Loja</th><th>Receita Bruta</th><th>Despesas</th><th>Imposto</th><th style="font-weight:700">Lucro Líquido</th>'+
   '</tr></thead><tbody>'+
