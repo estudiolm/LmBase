@@ -3972,21 +3972,27 @@ async function navFPacientes(){
       sbGet('sessoes_fisio','data_sessao').catch(()=>[])
     ]);
 
-    // Agrupa datas por paciente_id e guarda a última sessão (mais recente) de cada um
+    // Agrupa datas e sessões completas por paciente_id, e guarda a última (mais recente) de cada um
     const datasMap = {};
     const ultimaMap = {};
+    const sessoesMap = {};
+    if(!window._sessoesById) window._sessoesById = {};
+    sessRows.forEach(s=>{ if(s.id!=null) window._sessoesById[s.id]=s; }); // índice p/ edição, inclui avulsas sem paciente_id
     sessRows.forEach(s=>{
       if(!s.paciente_id) return; // avulsas não têm paciente_id
       if(!datasMap[s.paciente_id]) datasMap[s.paciente_id]=[];
+      if(!sessoesMap[s.paciente_id]) sessoesMap[s.paciente_id]=[];
       if(s.data_sessao){
         // Parseia diretamente sem new Date() para evitar problema de timezone
         const iso = String(s.data_sessao).split('T')[0];
         const [y,m,d] = iso.split('-');
         datasMap[s.paciente_id].push(d+'/'+m+'/'+y.slice(2));
       }
+      sessoesMap[s.paciente_id].push(s);
       // sessRows vem ordenado por data_sessao asc — a última iteração é a mais recente
       ultimaMap[s.paciente_id] = s;
     });
+    window._fisioSessoesCache = sessoesMap;
 
     // Verifica e dá alta automática para quem completou
     const paraAltaAutomatica = pacRows.filter(r=>
@@ -4265,18 +4271,16 @@ function verPaciente(pOuIdx){
     ok?'<div style="font-size:11px;color:#2D7A3A;margin-top:4px;font-weight:600">✓ Tratamento completo!</div>':'')+
     '</div>':'')+
 
-    '<div class="dp"><h3>Histórico de sessões</h3>'+
-    (p.datas&&p.datas.length?
-      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;margin-top:4px">'+
-      p.datas.map((d,i)=>
-        '<div style="background:var(--green-light);border:1px solid rgba(45,122,58,.2);border-radius:var(--r-sm);padding:7px 10px;text-align:center">'+
-        '<div style="font-size:10px;color:var(--green);font-weight:700;text-transform:uppercase;letter-spacing:.04em">Sessão '+(i+1)+'</div>'+
-        '<div style="font-size:12px;color:var(--text-1);font-weight:500;margin-top:2px">'+(d||'—')+'</div>'+
-        '</div>'
-      ).join('')+'</div>'
-    :
-      '<div style="padding:12px 0;color:var(--text-3);font-size:13px;text-align:center">Nenhuma sessão registrada ainda</div>'
-    )+
+    '<div class="dp"><h3>Sessões ('+((window._fisioSessoesCache&&window._fisioSessoesCache[p.id])?window._fisioSessoesCache[p.id].length:0)+')</h3>'+
+    '<div style="padding:12px 16px">'+
+    (function(){
+      const lista = (window._fisioSessoesCache&&window._fisioSessoesCache[p.id])?window._fisioSessoesCache[p.id].slice().reverse():[];
+      if(!lista.length) return '<div style="padding:12px 0;color:var(--text-3);font-size:13px;text-align:center">Nenhuma sessão registrada ainda — use "Registrar sessão" abaixo.</div>';
+      return '<div style="display:flex;flex-direction:column;gap:8px">'+
+        lista.map(s=>blocoSessaoInline(s, p.dor_inicial, true)).join('')+
+        '</div>';
+    })()+
+    '</div>'+
     '</div>'+
 
     '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
@@ -4328,6 +4332,151 @@ async function confirmarEditarAvaliacao(){
     fecharModal();
     await navFPacientes();
     verPacienteNome(nome);
+  } catch(e){ if(btn){ btn.disabled=false; btn.textContent='Salvar'; } alert('Erro: '+e.message); }
+}
+
+// ── SESSÕES: exibição inline + edição ─────────────────────
+function buscarSessaoPorId(id){
+  return (window._sessoesById||{})[id] || null;
+}
+
+// Renderiza um bloco de sessão/avulsa/reavaliação; com botão de editar quando editavel=true
+function blocoSessaoInline(s, dorInicial, editavel){
+  const tipo = s.tipo||'sessao';
+  const dt = fmtDataBR(s.data_sessao);
+  const badge = tipo==='reavaliacao' ? 'Reavaliação' : tipo==='avulsa' ? 'Sessão avulsa' : 'Sessão '+(s.numero_sessao||'');
+  const cor = tipo==='reavaliacao' ? {bg:'var(--gold-ultra)',fg:'var(--gold-dark)'} : tipo==='avulsa' ? {bg:'var(--bg-2)',fg:'var(--text-2)'} : {bg:'var(--green-light)',fg:'var(--green)'};
+  const temEstruturado = s.como_chegou||s.relato_queixa||s.procedimentos||s.resposta||s.evolucao||s.orientacoes||s.reav_funcao||s.reav_objetivos||s.dor_nivel!=null;
+
+  let corpo;
+  if(tipo==='reavaliacao'){
+    corpo = campoP('Dor',s.dor_nivel!=null?s.dor_nivel+'/10'+(dorInicial!=null?' (inicial: '+dorInicial+'/10)':''):null)+
+      campoP('Função / mobilidade',s.reav_funcao)+campoP('Status dos objetivos',s.reav_objetivos)+
+      campoP('Observações',s.evolucao)+(!temEstruturado?campoP('Observações',s.observacao):'');
+  } else {
+    corpo = campoP('Profissional',s.profissional)+campoP('Como chegou',s.como_chegou)+campoP('Relato',s.relato_queixa)+
+      campoP('Realizado',s.procedimentos)+campoP('Resposta',s.resposta)+campoP('Dor',s.dor_nivel!=null?s.dor_nivel+'/10':null)+
+      campoP('Evolução',s.evolucao)+campoP('Orientações',s.orientacoes)+
+      (!temEstruturado?campoP(tipo==='avulsa'?'Detalhes':'Observações',s.observacao):'');
+  }
+
+  return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);padding:12px">'+
+  '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">'+
+  '<span style="background:'+cor.bg+';color:'+cor.fg+';font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--r-full)">'+badge+'</span>'+
+  '<span style="font-size:12px;color:var(--text-2)">'+dt+'</span>'+
+  (editavel&&s.id?'<button class="btn" style="margin-left:auto;padding:3px 10px;font-size:11px" onclick="abrirEditarSessao('+s.id+')"><i class="ti ti-edit" style="font-size:11px"></i> Editar</button>':'')+
+  '</div>'+
+  (corpo||'<div style="font-size:12px;color:var(--text-3);font-style:italic;margin-top:3px">Sem observações</div>')+
+  '</div>';
+}
+
+function abrirEditarSessao(id){
+  const s = buscarSessaoPorId(id);
+  if(!s){ alert('Sessão não encontrada — volte à lista de pacientes e tente de novo.'); return; }
+  const tipo = s.tipo||'sessao';
+  const iso = String(s.data_sessao||'').split('T')[0];
+
+  if(tipo==='reavaliacao'){
+    abrirModal(
+      '<div class="mdt">Editar reavaliação — '+esc(s.paciente_nome||'')+'</div>'+
+      '<input type="hidden" id="es_id" value="'+s.id+'"><input type="hidden" id="es_tipo" value="reavaliacao">'+
+      '<div class="fr2">'+
+      '<div><label class="fl">Data</label><input class="fi" id="es_data" type="date" value="'+iso+'"></div>'+
+      '<div><label class="fl">Dor atual (0–10)</label><select class="fi" id="es_dor">'+optsDor(s.dor_nivel)+'</select></div>'+
+      '</div>'+
+      '<label class="fl">Função e mobilidade</label><textarea class="fi" id="es_funcao" rows="2">'+(s.reav_funcao||'')+'</textarea>'+
+      '<label class="fl">Status dos objetivos</label><textarea class="fi" id="es_objetivos" rows="2">'+(s.reav_objetivos||'')+'</textarea>'+
+      '<label class="fl">Observações gerais</label><textarea class="fi" id="es_obs" rows="2">'+(s.evolucao||'')+'</textarea>'+
+      '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btne" id="es_btn" onclick="confirmarEditarSessao()">Salvar</button></div>'
+    );
+  } else {
+    abrirModal(
+      '<div class="mdt">Editar '+(tipo==='avulsa'?'sessão avulsa':'sessão')+' — '+esc(s.paciente_nome||'')+'</div>'+
+      (s.observacao&&!(s.procedimentos||s.evolucao)?
+        '<div style="background:var(--bg-2);border-radius:var(--r-md);padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--text-2)"><strong>Registro antigo:</strong> '+s.observacao+'</div>':'')+
+      '<input type="hidden" id="es_id" value="'+s.id+'"><input type="hidden" id="es_tipo" value="'+tipo+'">'+
+      '<div class="fr2">'+
+      '<div><label class="fl">Data</label><input class="fi" id="es_data" type="date" value="'+iso+'"></div>'+
+      '<div><label class="fl">Como chegou</label><input class="fi" id="es_chegou" value="'+esc(s.como_chegou)+'"></div>'+
+      '</div>'+
+      '<label class="fl">Relato / queixa do dia</label><textarea class="fi" id="es_relato" rows="2">'+(s.relato_queixa||'')+'</textarea>'+
+      '<label class="fl">O que foi realizado</label><textarea class="fi" id="es_realizado" rows="2">'+(s.procedimentos||'')+'</textarea>'+
+      '<div class="fr2">'+
+      '<div><label class="fl">Resposta ao atendimento</label><input class="fi" id="es_resposta" value="'+esc(s.resposta)+'"></div>'+
+      '<div><label class="fl">Dor no dia (0–10)</label><select class="fi" id="es_dor">'+optsDor(s.dor_nivel)+'</select></div>'+
+      '</div>'+
+      '<label class="fl">Evolução observada</label><textarea class="fi" id="es_evolucao" rows="2">'+(s.evolucao||'')+'</textarea>'+
+      '<label class="fl">Orientações / próxima conduta</label><textarea class="fi" id="es_orientacoes" rows="2">'+(s.orientacoes||'')+'</textarea>'+
+      '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btne" id="es_btn" onclick="confirmarEditarSessao()">Salvar</button></div>'
+    );
+  }
+}
+
+async function confirmarEditarSessao(){
+  const id   = document.getElementById('es_id')?.value;
+  const tipo = document.getElementById('es_tipo')?.value;
+  const data = document.getElementById('es_data')?.value;
+  const btn  = document.getElementById('es_btn');
+  if(!id||!data){ alert('Preencha a data.'); return; }
+  if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
+  try {
+    const original = buscarSessaoPorId(id);
+    let payload;
+
+    if(tipo==='reavaliacao'){
+      const dorVal    = document.getElementById('es_dor')?.value;
+      const dor       = dorVal!==''&&dorVal!=null?parseInt(dorVal):null;
+      const funcao    = document.getElementById('es_funcao')?.value.trim()||null;
+      const objetivos = document.getElementById('es_objetivos')?.value.trim()||null;
+      const obsGeral  = document.getElementById('es_obs')?.value.trim()||null;
+      payload = {
+        data_sessao: data,
+        dor_nivel: dor,
+        reav_funcao: funcao, reav_mobilidade: funcao, reav_objetivos: objetivos,
+        evolucao: obsGeral,
+        observacao: [
+          dor!=null?'Dor atual: '+dor+'/10':null,
+          funcao?'Função/mobilidade: '+funcao:null,
+          objetivos?'Objetivos: '+objetivos:null,
+          obsGeral?'Obs: '+obsGeral:null,
+        ].filter(Boolean).join(' | ')
+      };
+    } else {
+      const comoChegou  = document.getElementById('es_chegou')?.value.trim()||null;
+      const relato      = document.getElementById('es_relato')?.value.trim()||null;
+      const realizado   = document.getElementById('es_realizado')?.value.trim()||null;
+      const resposta    = document.getElementById('es_resposta')?.value.trim()||null;
+      const dorVal      = document.getElementById('es_dor')?.value;
+      const dor         = dorVal!==''&&dorVal!=null?parseInt(dorVal):null;
+      const evolucao    = document.getElementById('es_evolucao')?.value.trim()||null;
+      const orientacoes = document.getElementById('es_orientacoes')?.value.trim()||null;
+      let obs = [
+        comoChegou?'Chegou: '+comoChegou:null,
+        relato?'Relato: '+relato:null,
+        realizado?'Realizado: '+realizado:null,
+        resposta?'Resposta: '+resposta:null,
+        evolucao?'Evolução: '+evolucao:null,
+        orientacoes?'Orientações: '+orientacoes:null,
+      ].filter(Boolean).join(' | ');
+      // Sessão avulsa guarda valor/forma de pagamento dentro de observacao — preserva essa marcação ao editar
+      if(tipo==='avulsa'){
+        const tag = (original?.observacao||'').match(/\[Avulsa[^\]]*\]/);
+        if(tag) obs = obs+' '+tag[0];
+      }
+      payload = {
+        data_sessao: data,
+        como_chegou: comoChegou, relato_queixa: relato, procedimentos: realizado,
+        resposta: resposta, dor_nivel: dor, evolucao: evolucao, orientacoes: orientacoes,
+        observacao: obs
+      };
+    }
+
+    await sbUpdate('sessoes_fisio', id, payload);
+    await registrarLog('editou sessão','sessoes_fisio','Sessão #'+id+' editada'+(original?' — '+(original.paciente_nome||''):''));
+    window._fisioCache = null;
+    const nome = window._pacienteAtual?.n || original?.paciente_nome;
+    fecharModal();
+    if(nome){ await navFPacientes(); verPacienteNome(nome); }
   } catch(e){ if(btn){ btn.disabled=false; btn.textContent='Salvar'; } alert('Erro: '+e.message); }
 }
 
@@ -7390,6 +7539,8 @@ async function verProntuario(nomePaciente){
     ]);
     const pac = pacRows.find(r=>r.nome===nomePaciente);
     const sessoes = await sessR.json();
+    if(!window._sessoesById) window._sessoesById = {};
+    sessoes.forEach(s=>{ if(s.id!=null) window._sessoesById[s.id]=s; }); // garante que "Editar" funcione mesmo p/ avulsas
 
     // Numeração das sessões regulares (para quem não tem numero_sessao gravado — registros antigos)
     let contador=0;
@@ -7426,30 +7577,8 @@ async function verProntuario(nomePaciente){
         '</div>';
       }
 
-      const s=it.s;
-      const badge = it._tipo==='reavaliacao' ? 'Reavaliação' : it._tipo==='avulsa' ? 'Sessão avulsa' : 'Sessão '+s._num;
-      const cor = it._tipo==='reavaliacao' ? {bg:'var(--gold-ultra)',fg:'var(--gold-dark)'} : it._tipo==='avulsa' ? {bg:'var(--bg-2)',fg:'var(--text-2)'} : {bg:'var(--green-light)',fg:'var(--green)'};
-      const temEstruturado = s.como_chegou||s.relato_queixa||s.procedimentos||s.resposta||s.evolucao||s.orientacoes||s.reav_funcao||s.reav_objetivos||s.dor_nivel!=null;
-
-      let corpo;
-      if(it._tipo==='reavaliacao'){
-        const dorIni = pac?.dor_inicial;
-        corpo = campoP('Dor',s.dor_nivel!=null?s.dor_nivel+'/10'+(dorIni!=null?' (inicial: '+dorIni+'/10)':''):null)+
-          campoP('Função / mobilidade',s.reav_funcao)+campoP('Status dos objetivos',s.reav_objetivos)+
-          campoP('Observações',s.evolucao)+(!temEstruturado?campoP('Observações',s.observacao):'');
-      } else {
-        corpo = campoP('Profissional',s.profissional)+campoP('Como chegou',s.como_chegou)+campoP('Relato',s.relato_queixa)+
-          campoP('Realizado',s.procedimentos)+campoP('Resposta',s.resposta)+campoP('Dor',s.dor_nivel!=null?s.dor_nivel+'/10':null)+
-          campoP('Evolução',s.evolucao)+campoP('Orientações',s.orientacoes)+
-          (!temEstruturado?campoP(it._tipo==='avulsa'?'Detalhes':'Observações',s.observacao):'');
-      }
-
-      return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);padding:12px">'+
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">'+
-      '<span style="background:'+cor.bg+';color:'+cor.fg+';font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--r-full)">'+badge+'</span>'+
-      '<span style="font-size:12px;color:var(--text-2)">'+dt+'</span></div>'+
-      (corpo||'<div style="font-size:12px;color:var(--text-3);font-style:italic;margin-top:3px">Sem observações</div>')+
-      '</div>';
+      const s = {...it.s, numero_sessao: it.s.numero_sessao||it.s._num};
+      return blocoSessaoInline(s, pac?.dor_inicial, true);
     });
 
     abrirModal(
