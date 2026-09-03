@@ -3955,7 +3955,7 @@ function renderFDash(dados){
   dados.map((p,i)=>{
     const pct=p.sessoes?Math.min(100,Math.round(p.realizadas/p.sessoes*100)):null;
     const ok=p.sessoes&&p.realizadas>=p.sessoes;
-    return '<tr onclick="navFPacienteDetalhe('+i+','+JSON.stringify(dados).replace(/</g,'&lt;').split('').map(c=>c).join('')+')">'+
+    return '<tr onclick="verPacienteNome(\''+esc(p.n)+'\')" style="cursor:pointer">'+
     '<td><strong>'+p.n+'</strong></td><td style="color:#666">'+(p.sessoes||'—')+'</td><td>'+p.realizadas+'</td>'+
     '<td style="min-width:120px"><div style="display:flex;align-items:center;gap:8px">'+
     (pct!=null?'<div style="flex:1;height:6px;border-radius:3px;background:#f1f0e8"><div style="width:'+pct+'%;height:100%;border-radius:3px;background:'+(ok?'#16a34a':'#059669')+'"></div></div><span style="font-size:11px;color:#666">'+pct+'%</span>':'<span style="color:#aaa;font-size:11px">livre</span>')+
@@ -3972,9 +3972,11 @@ async function navFPacientes(){
       sbGet('sessoes_fisio','data_sessao').catch(()=>[])
     ]);
 
-    // Agrupa datas por paciente_id
+    // Agrupa datas por paciente_id e guarda a última sessão (mais recente) de cada um
     const datasMap = {};
+    const ultimaMap = {};
     sessRows.forEach(s=>{
+      if(!s.paciente_id) return; // avulsas não têm paciente_id
       if(!datasMap[s.paciente_id]) datasMap[s.paciente_id]=[];
       if(s.data_sessao){
         // Parseia diretamente sem new Date() para evitar problema de timezone
@@ -3982,6 +3984,8 @@ async function navFPacientes(){
         const [y,m,d] = iso.split('-');
         datasMap[s.paciente_id].push(d+'/'+m+'/'+y.slice(2));
       }
+      // sessRows vem ordenado por data_sessao asc — a última iteração é a mais recente
+      ultimaMap[s.paciente_id] = s;
     });
 
     // Verifica e dá alta automática para quem completou
@@ -4000,14 +4004,31 @@ async function navFPacientes(){
       paraAltaAutomatica.forEach(r=>{ r.status='alta'; });
     }
 
-    const merged = pacRows.map(r=>({
-      id:r.id, n:r.nome, tel:r.telefone,
-      sessoes:r.sessoes_contratadas,
-      realizadas:r.sessoes_realizadas||0,
-      status:r.status||'ativo',
-      s:r.status||'ativo',
-      datas: datasMap[r.id]||[]
-    }));
+    const merged = pacRows.map(r=>{
+      const ultima = ultimaMap[r.id];
+      return {
+        id:r.id, n:r.nome, tel:r.telefone,
+        sessoes:r.sessoes_contratadas,
+        realizadas:r.sessoes_realizadas||0,
+        status:r.status||'ativo',
+        s:r.status||'ativo',
+        datas: datasMap[r.id]||[],
+        // Avaliação inicial
+        motivo_procura: r.motivo_procura,
+        queixa_principal: r.queixa_principal,
+        historico_relevante: r.historico_relevante,
+        dor_inicial: r.dor_inicial,
+        achados_avaliacao: r.achados_avaliacao,
+        objetivos_tratamento: r.objetivos_tratamento,
+        conduta_inicial: r.conduta_inicial,
+        proxima_reavaliacao: r.proxima_reavaliacao,
+        criado_em: r.criado_em,
+        // Resumo derivado da última sessão/reavaliação
+        ultimaEvolucao: ultima?.evolucao || ultima?.relato_queixa || ultima?.observacao || null,
+        ultimaData: ultima?.data_sessao || null,
+        planoAtual: ultima?.orientacoes || r.conduta_inicial || null,
+      };
+    });
 
     window._fisioCache = merged;
     const ativos = merged.filter(p=>p.status!=='alta');
@@ -4181,9 +4202,14 @@ function navFAltas(){
   );
 }
 
-function verPacienteNome(nome){
+async function verPacienteNome(nome){
   const cache = window._fisioCache || window._fisioListaAtual || FISIO;
-  const p = cache.find(x=>x.n===nome);
+  let p = cache.find(x=>x.n===nome);
+  if(!p){
+    // Cache ainda não carregada nesta tela (ex: veio do Dashboard) — busca a lista completa e tenta de novo
+    await navFPacientes();
+    p = (window._fisioCache||[]).find(x=>x.n===nome);
+  }
   if(!p){ console.warn('Paciente não encontrado:', nome); return; }
   verPaciente(p);
 }
@@ -4215,6 +4241,21 @@ function verPaciente(pOuIdx){
     '<span style="margin-left:auto"><span class="bdg '+(ok?'bg':p.realizadas>0?'ba':'bx')+'">'+( ok?'Concluído':p.realizadas>0?'Em andamento':'Aguardando')+'</span></span>'+
     '</div>'+
 
+'<div class="dp" style="margin-bottom:16px">'+
+    '<h3>Resumo</h3>'+
+    '<div style="padding:4px 20px 14px">'+
+    resumoLinha('Motivo da procura',p.motivo_procura)+
+    resumoLinha('Queixa principal',p.queixa_principal)+
+    resumoLinha('Objetivo',p.objetivos_tratamento)+
+    resumoLinha('Última evolução',p.ultimaEvolucao?(p.ultimaData?fmtDataBR(p.ultimaData)+' — ':'')+p.ultimaEvolucao:null)+
+    resumoLinha('Plano atual',p.planoAtual)+
+    (!p.motivo_procura&&!p.queixa_principal&&!p.objetivos_tratamento?
+      '<div style="font-size:11px;color:var(--text-3);font-style:italic;margin-top:2px">Avaliação inicial incompleta — use "Editar avaliação" abaixo para preenchê-la.</div>':'')+
+    '</div>'+
+    dr('Sessões',p.sessoes?p.realizadas+' de '+p.sessoes+' contratadas':p.realizadas+' realizadas (sem plano fixo)')+
+    dr('Próxima reavaliação',p.proxima_reavaliacao?fmtDataBR(p.proxima_reavaliacao):'a definir')+
+    '</div>'+
+
     (pct!=null?
     '<div style="margin-bottom:16px">'+
     '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-2);margin-bottom:6px">'+
@@ -4240,10 +4281,54 @@ function verPaciente(pOuIdx){
 
     '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
     '<button class="btn btne" onclick="abrirRegistrarSessao(\''+esc(p.n)+'\')"><i class="ti ti-plus"></i> Registrar sessão</button>'+
+    '<button class="btn" onclick="abrirReavaliacao(\''+esc(p.n)+'\')"><i class="ti ti-refresh"></i> Reavaliação</button>'+
     '<button class="btn" onclick="verProntuario(\''+esc(p.n)+'\')"><i class="ti ti-clipboard-text"></i> Prontuário</button>'+
+    '<button class="btn" onclick="abrirEditarAvaliacao(\''+esc(p.n)+'\')"><i class="ti ti-edit"></i> Editar avaliação</button>'+
     '<button class="btn btnp" onclick="darAlta()"><i class="ti ti-user-check"></i> Dar alta</button>'+
     '</div>'
   );
+}
+
+function abrirEditarAvaliacao(nome){
+  const p = (window._fisioCache||[]).find(x=>x.n===nome) || window._pacienteAtual || {};
+  abrirModal(
+    '<div class="mdt">Avaliação inicial — '+esc(nome)+'</div>'+
+    '<input type="hidden" id="ea_nome" value="'+esc(nome)+'">'+
+    '<label class="fl">Motivo da procura</label><input class="fi" id="ea_motivo" value="'+esc(p.motivo_procura)+'" placeholder="Ex: indicação médica, dor recorrente, pós-cirúrgico…">'+
+    '<label class="fl">Queixa principal</label><textarea class="fi" id="ea_queixa" rows="2" placeholder="O que o paciente relata em suas palavras">'+(p.queixa_principal||'')+'</textarea>'+
+    '<div class="fr2"><div><label class="fl">Dor inicial (0–10)</label><select class="fi" id="ea_dor">'+optsDor(p.dor_inicial)+'</select></div>'+
+    '<div><label class="fl">Histórico relevante</label><input class="fi" id="ea_historico" value="'+esc(p.historico_relevante)+'" placeholder="Cirurgias, comorbidades, lesões prévias…"></div></div>'+
+    '<label class="fl">Principais achados da avaliação</label><textarea class="fi" id="ea_achados" rows="2" placeholder="Testes, amplitude, força, postura…">'+(p.achados_avaliacao||'')+'</textarea>'+
+    '<label class="fl">Objetivo do tratamento</label><textarea class="fi" id="ea_objetivo" rows="2" placeholder="O que se espera alcançar">'+(p.objetivos_tratamento||'')+'</textarea>'+
+    '<label class="fl">Conduta / plano inicial</label><textarea class="fi" id="ea_conduta" rows="2" placeholder="Linha de tratamento proposta">'+(p.conduta_inicial||'')+'</textarea>'+
+    '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btne" id="ea_btn" onclick="confirmarEditarAvaliacao()">Salvar</button></div>'
+  );
+}
+
+async function confirmarEditarAvaliacao(){
+  const nome = document.getElementById('ea_nome')?.value;
+  const btn  = document.getElementById('ea_btn');
+  if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
+  try {
+    const rows = await sbGet('pacientes_fisio','id');
+    const pac  = rows.find(r=>r.nome===nome);
+    if(!pac){ alert('Paciente não encontrado.'); if(btn){btn.disabled=false;btn.textContent='Salvar';} return; }
+    const dorVal = document.getElementById('ea_dor')?.value;
+    await sbUpdate('pacientes_fisio', pac.id, {
+      motivo_procura: document.getElementById('ea_motivo')?.value.trim()||null,
+      queixa_principal: document.getElementById('ea_queixa')?.value.trim()||null,
+      dor_inicial: dorVal!==''&&dorVal!=null?parseInt(dorVal):null,
+      historico_relevante: document.getElementById('ea_historico')?.value.trim()||null,
+      achados_avaliacao: document.getElementById('ea_achados')?.value.trim()||null,
+      objetivos_tratamento: document.getElementById('ea_objetivo')?.value.trim()||null,
+      conduta_inicial: document.getElementById('ea_conduta')?.value.trim()||null,
+    });
+    await registrarLog('editou avaliação inicial','pacientes_fisio','Avaliação inicial atualizada: '+nome);
+    window._fisioCache = null;
+    fecharModal();
+    await navFPacientes();
+    verPacienteNome(nome);
+  } catch(e){ if(btn){ btn.disabled=false; btn.textContent='Salvar'; } alert('Erro: '+e.message); }
 }
 
 async function darAlta(){
@@ -4838,11 +4923,28 @@ async function confirmarPagamento(){
 
 // ── REGISTRAR SESSÃO FISIO NO BANCO ───────────────────────
 async function confirmarSessao(){
-  const nome = document.getElementById('fs_nome')?.value;
-  const data = document.getElementById('fs_data')?.value;
-  const obs  = document.getElementById('fs_obs')?.value||null;
+  const nome        = document.getElementById('fs_nome')?.value;
+  const data        = document.getElementById('fs_data')?.value;
+  const comoChegou  = document.getElementById('fs_chegou')?.value.trim()||null;
+  const relato      = document.getElementById('fs_relato')?.value.trim()||null;
+  const realizado   = document.getElementById('fs_realizado')?.value.trim()||null;
+  const resposta    = document.getElementById('fs_resposta')?.value.trim()||null;
+  const dorVal      = document.getElementById('fs_dor')?.value;
+  const dor         = dorVal!==''&&dorVal!=null?parseInt(dorVal):null;
+  const evolucao    = document.getElementById('fs_evolucao')?.value.trim()||null;
+  const orientacoes = document.getElementById('fs_orientacoes')?.value.trim()||null;
   const btn  = document.getElementById('fs_btn');
   if(!nome||!data){ alert('Preencha paciente e data.'); return; }
+  if(!realizado){ alert('Descreva o que foi realizado na sessão — mesmo um resumo curto já ajuda a manter o histórico do paciente.'); return; }
+  // Resumo em texto corrido, mantido por compatibilidade com telas antigas que leem "observacao"
+  const obs = [
+    comoChegou?'Chegou: '+comoChegou:null,
+    relato?'Relato: '+relato:null,
+    'Realizado: '+realizado,
+    resposta?'Resposta: '+resposta:null,
+    evolucao?'Evolução: '+evolucao:null,
+    orientacoes?'Orientações: '+orientacoes:null,
+  ].filter(Boolean).join(' | ');
   if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
   try {
     const rows = await sbGet('pacientes_fisio','id');
@@ -4875,7 +4977,17 @@ async function confirmarSessao(){
       paciente_id: pac.id,
       paciente_nome: nome,
       data_sessao: data,
-      observacao: obs
+      observacao: obs,
+      tipo: 'sessao',
+      numero_sessao: novasRealizadas,
+      profissional: usuarioAtual?.nome||null,
+      como_chegou: comoChegou,
+      relato_queixa: relato,
+      procedimentos: realizado,
+      resposta: resposta,
+      evolucao: evolucao,
+      orientacoes: orientacoes,
+      dor_nivel: dor
     });
 
     // Verifica se completou o plano → alta automática
@@ -5018,7 +5130,14 @@ async function confirmarNovoPaciente(){
       telefone:document.getElementById('fp_tel').value||null,
       sessoes_contratadas:parseInt(document.getElementById('fp_sess').value)||null,
       sessoes_realizadas:0,
-      status:'ativo'
+      status:'ativo',
+      motivo_procura:document.getElementById('fp_motivo')?.value.trim()||null,
+      queixa_principal:document.getElementById('fp_queixa')?.value.trim()||null,
+      dor_inicial:document.getElementById('fp_dor')?.value!==''?parseInt(document.getElementById('fp_dor').value):null,
+      historico_relevante:document.getElementById('fp_historico')?.value.trim()||null,
+      achados_avaliacao:document.getElementById('fp_achados')?.value.trim()||null,
+      objetivos_tratamento:document.getElementById('fp_objetivo')?.value.trim()||null,
+      conduta_inicial:document.getElementById('fp_conduta')?.value.trim()||null,
     });
     await registrarLog('cadastrou paciente', 'pacientes_fisio', 'Novo paciente: '+nome);
     fecharModal();
@@ -5044,6 +5163,19 @@ function abrirNovoPaciente(){
   '<label class="fl">Nome *</label><input class="fi" id="fp_nome" placeholder="Nome completo">'+
   '<div class="fr2"><div><label class="fl">Telefone</label><input class="fi" id="fp_tel" placeholder="(11) 9xxxx-xxxx"></div>'+
   '<div><label class="fl">Sessões contratadas</label><input class="fi" id="fp_sess" type="number" placeholder="10"></div></div>'+
+
+  '<details open style="margin:14px 0 4px;border:1px solid var(--border);border-radius:var(--r-md);padding:10px 14px;background:var(--bg)">'+
+  '<summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--text-1)">Avaliação inicial <span style="font-weight:400;color:var(--text-3)">(recomendado — pode completar depois)</span></summary>'+
+  '<div style="margin-top:12px">'+
+  '<label class="fl">Motivo da procura</label><input class="fi" id="fp_motivo" placeholder="Ex: indicação médica, dor recorrente, pós-cirúrgico…">'+
+  '<label class="fl">Queixa principal</label><textarea class="fi" id="fp_queixa" rows="2" placeholder="O que o paciente relata em suas palavras"></textarea>'+
+  '<div class="fr2"><div><label class="fl">Dor inicial (0–10)</label><select class="fi" id="fp_dor">'+optsDor()+'</select></div>'+
+  '<div><label class="fl">Histórico relevante</label><input class="fi" id="fp_historico" placeholder="Cirurgias, comorbidades, lesões prévias…"></div></div>'+
+  '<label class="fl">Principais achados da avaliação</label><textarea class="fi" id="fp_achados" rows="2" placeholder="Testes, amplitude, força, postura…"></textarea>'+
+  '<label class="fl">Objetivo do tratamento</label><textarea class="fi" id="fp_objetivo" rows="2" placeholder="O que se espera alcançar"></textarea>'+
+  '<label class="fl">Conduta / plano inicial</label><textarea class="fi" id="fp_conduta" rows="2" placeholder="Linha de tratamento proposta"></textarea>'+
+  '</div></details>'+
+
   '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btne" id="fp_btn" onclick="confirmarNovoPaciente()">Salvar</button></div>');
 }
 
@@ -5084,8 +5216,10 @@ function abrirSessaoAvulsa(){
     '</select></div>'+
     '</div>'+
 
-    '<label class="fl">Observações</label>'+
-    '<textarea class="fi" id="av_obs" rows="2" placeholder="Queixa, procedimento, evolução…"></textarea>'+
+    '<label class="fl">O que foi realizado *</label>'+
+    '<textarea class="fi" id="av_realizado" rows="2" placeholder="Queixa e procedimento realizado nesta sessão"></textarea>'+
+    '<label class="fl">Resposta / evolução</label>'+
+    '<textarea class="fi" id="av_resposta" rows="2" placeholder="Como o paciente respondeu ao atendimento"></textarea>'+
 
     '<div class="mdf">'+
     '<button class="btn" onclick="fecharModal()">Cancelar</button>'+
@@ -5105,25 +5239,32 @@ function atualizarPrecoAvulsa(dataStr){
 }
 
 async function confirmarSessaoAvulsa(){
-  const nome  = document.getElementById('av_nome')?.value.trim();
-  const data  = document.getElementById('av_data')?.value;
-  const valor = parseFloat(document.getElementById('av_valor')?.value)||145;
-  const pgto  = document.getElementById('av_pgto')?.value;
-  const fisio = document.getElementById('av_fisio')?.value;
-  const obs   = document.getElementById('av_obs')?.value||null;
+  const nome      = document.getElementById('av_nome')?.value.trim();
+  const data      = document.getElementById('av_data')?.value;
+  const valor     = parseFloat(document.getElementById('av_valor')?.value)||145;
+  const pgto      = document.getElementById('av_pgto')?.value;
+  const fisio     = document.getElementById('av_fisio')?.value;
+  const realizado = document.getElementById('av_realizado')?.value.trim()||null;
+  const resposta  = document.getElementById('av_resposta')?.value.trim()||null;
   const btn   = document.getElementById('av_btn');
 
   if(!nome){ alert('Informe o nome do paciente.'); return; }
   if(!data){ alert('Informe a data da sessão.'); return; }
+  if(!realizado){ alert('Descreva o que foi realizado na sessão — mesmo avulsa, precisa ficar registrado o que aconteceu.'); return; }
   if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
 
   try {
-    // Salva como sessão avulsa — paciente_id null, tipo 'avulso'
+    // Salva como sessão avulsa — paciente_id null, tipo 'avulsa'
+    const obs = 'Realizado: '+realizado+(resposta?' | Resposta: '+resposta:'');
     await sbInsert('sessoes_fisio',{
       paciente_id:   null,
       paciente_nome: nome,
       data_sessao:   data,
-      observacao:    (obs?obs+' ':'')+`[Avulsa · ${pgto} · R$${valor}${fisio==='Domicilio'?' · domicílio':''}]`
+      observacao:    obs+' '+`[Avulsa · ${pgto} · R$${valor}${fisio==='Domicilio'?' · domicílio':''}]`,
+      tipo: 'avulsa',
+      profissional: usuarioAtual?.nome||null,
+      procedimentos: realizado,
+      resposta: resposta
     });
 
     await registrarLog('registrou sessão avulsa','sessoes_fisio',
@@ -5154,12 +5295,98 @@ async function confirmarSessaoAvulsa(){
   }
 }
 
+// ── REAVALIAÇÃO ────────────────────────────────────────────
+async function abrirReavaliacao(nome){
+  const p = (window._fisioCache||[]).find(x=>x.n===nome);
+  const hoje=new Date(); const dd=String(hoje.getDate()).padStart(2,'0'),mm=String(hoje.getMonth()+1).padStart(2,'0'),yy=hoje.getFullYear();
+  const dorIni = p?.dor_inicial;
+  abrirModal(
+    '<div class="mdt"><i class="ti ti-refresh" style="color:var(--gold);margin-right:8px"></i>Reavaliação — '+nome+'</div>'+
+    '<div style="background:var(--gold-ultra);border:1px solid var(--gold-muted);border-radius:var(--r-md);padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-2)">'+
+    (dorIni!=null?'Dor na avaliação inicial: <strong>'+dorIni+'/10</strong>':'Sem dor inicial registrada')+
+    ' · Não conta como sessão do plano contratado.'+
+    '</div>'+
+    '<input type="hidden" id="rv_nome" value="'+esc(nome)+'">'+
+    '<div class="fr2">'+
+    '<div><label class="fl">Data da reavaliação</label><input class="fi" id="rv_data" type="date" value="'+yy+'-'+mm+'-'+dd+'"></div>'+
+    '<div><label class="fl">Dor atual (0–10)</label><select class="fi" id="rv_dor">'+optsDor()+'</select></div>'+
+    '</div>'+
+    '<label class="fl">Função e mobilidade</label><textarea class="fi" id="rv_funcao" rows="2" placeholder="Comparado à avaliação inicial: ganhos de amplitude, força, funcionalidade…"></textarea>'+
+    '<label class="fl">Status dos objetivos</label><textarea class="fi" id="rv_objetivos" rows="2" placeholder="Alcançado, em progresso, sem mudança…"></textarea>'+
+    '<label class="fl">Observações gerais</label><textarea class="fi" id="rv_obs" rows="2" placeholder="Outras observações da reavaliação"></textarea>'+
+    '<label class="fl">Próxima reavaliação (opcional)</label><input class="fi" id="rv_proxima" type="date">'+
+    '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btnp" id="rv_btn" onclick="confirmarReavaliacao()"><i class="ti ti-check"></i> Salvar reavaliação</button></div>'
+  );
+}
+
+async function confirmarReavaliacao(){
+  const nome     = document.getElementById('rv_nome')?.value;
+  const data     = document.getElementById('rv_data')?.value;
+  const dorVal   = document.getElementById('rv_dor')?.value;
+  const dor      = dorVal!==''&&dorVal!=null?parseInt(dorVal):null;
+  const funcao   = document.getElementById('rv_funcao')?.value.trim()||null;
+  const objetivos= document.getElementById('rv_objetivos')?.value.trim()||null;
+  const obsGeral = document.getElementById('rv_obs')?.value.trim()||null;
+  const proxima  = document.getElementById('rv_proxima')?.value||null;
+  const btn      = document.getElementById('rv_btn');
+  if(!nome||!data){ alert('Preencha a data da reavaliação.'); return; }
+  if(!funcao && !objetivos && !obsGeral && dor==null){ alert('Registre ao menos um dado da reavaliação (dor, função/mobilidade, objetivos ou observações).'); return; }
+  if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
+  try {
+    const rows = await sbGet('pacientes_fisio','id');
+    const pac  = rows.find(r=>r.nome===nome);
+    const obs = [
+      dor!=null?'Dor atual: '+dor+'/10':null,
+      funcao?'Função/mobilidade: '+funcao:null,
+      objetivos?'Objetivos: '+objetivos:null,
+      obsGeral?'Obs: '+obsGeral:null,
+    ].filter(Boolean).join(' | ');
+
+    await sbInsert('sessoes_fisio',{
+      paciente_id: pac?.id||null,
+      paciente_nome: nome,
+      data_sessao: data,
+      observacao: obs,
+      tipo: 'reavaliacao',
+      profissional: usuarioAtual?.nome||null,
+      dor_nivel: dor,
+      reav_funcao: funcao,
+      reav_mobilidade: funcao,
+      reav_objetivos: objetivos,
+      evolucao: obsGeral
+    });
+
+    if(pac?.id && proxima){
+      await sbUpdate('pacientes_fisio', pac.id, {proxima_reavaliacao: proxima});
+    }
+
+    await registrarLog('registrou reavaliação','sessoes_fisio','Reavaliação de '+nome+(dor!=null?' — dor atual '+dor+'/10':''));
+    window._fisioCache = null;
+    fecharModal();
+    await navFPacientes();
+    verPacienteNome(nome);
+  } catch(e){ if(btn){ btn.disabled=false; btn.textContent='Salvar reavaliação'; } alert('Erro: '+e.message); }
+}
+
 function abrirRegistrarSessao(nome){
   const hoje=new Date(); const dd=String(hoje.getDate()).padStart(2,'0'),mm=String(hoje.getMonth()+1).padStart(2,'0'),yy=hoje.getFullYear();
+  const p = (window._fisioCache||[]).find(x=>x.n===nome);
+  const numSessao = p ? (p.realizadas||0)+1 : null;
   abrirModal('<div class="mdt">Registrar sessão — '+nome+'</div>'+
-  '<label class="fl">Paciente</label><input class="fi" id="fs_nome" value="'+nome+'" readonly>'+
-  '<label class="fl">Data da sessão</label><input class="fi" id="fs_data" type="date" value="'+yy+'-'+mm+'-'+dd+'">'+
-  '<label class="fl">Observações</label><textarea class="fi" id="fs_obs" rows="2" placeholder="Evolução, intercorrências…"></textarea>'+
+  '<div class="ps" style="margin:-4px 0 14px">'+(numSessao?'Sessão nº '+numSessao+' · ':'')+(usuarioAtual?.nome||'')+' · data e profissional preenchidos automaticamente</div>'+
+  '<input type="hidden" id="fs_nome" value="'+nome+'">'+
+  '<div class="fr2">'+
+  '<div><label class="fl">Data da sessão</label><input class="fi" id="fs_data" type="date" value="'+yy+'-'+mm+'-'+dd+'"></div>'+
+  '<div><label class="fl">Como o paciente chegou</label><input class="fi" id="fs_chegou" placeholder="Ex: bem, com dor, cansado…"></div>'+
+  '</div>'+
+  '<label class="fl">Relato / queixa do dia</label><textarea class="fi" id="fs_relato" rows="2" placeholder="O que o paciente relatou hoje"></textarea>'+
+  '<label class="fl">O que foi realizado *</label><textarea class="fi" id="fs_realizado" rows="2" placeholder="Condutas, exercícios, técnicas aplicadas"></textarea>'+
+  '<div class="fr2">'+
+  '<div><label class="fl">Resposta ao atendimento</label><input class="fi" id="fs_resposta" placeholder="Ex: boa tolerância, referiu alívio…"></div>'+
+  '<div><label class="fl">Dor no dia (0–10)</label><select class="fi" id="fs_dor">'+optsDor()+'</select></div>'+
+  '</div>'+
+  '<label class="fl">Evolução observada</label><textarea class="fi" id="fs_evolucao" rows="2" placeholder="Progresso em relação às sessões anteriores"></textarea>'+
+  '<label class="fl">Orientações / próxima conduta</label><textarea class="fi" id="fs_orientacoes" rows="2" placeholder="Orientações dadas, plano para a próxima sessão"></textarea>'+
   '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btne" id="fs_btn" onclick="confirmarSessao()">Registrar</button></div>');
 }
 
@@ -7149,28 +7376,89 @@ async function verHistoricoPagamentos(nomeAluno){
   } catch(e){alert('Erro: '+e.message);}
 }
 
-// PRONTUÁRIO FISIOTERAPIA
+// PRONTUÁRIO FISIOTERAPIA — linha do tempo: avaliação inicial + sessões + reavaliações
+function campoP(lb,val){
+  return (val!=null&&val!=='') ? '<div style="font-size:12px;color:var(--text-1);margin-top:3px;line-height:1.5"><strong style="color:var(--text-2);font-weight:600">'+lb+':</strong> '+val+'</div>' : '';
+}
 async function verProntuario(nomePaciente){
+  abrirModal('<div class="mdt"><i class="ti ti-clipboard-text" style="margin-right:8px;color:var(--gold)"></i>Prontuário — '+nomePaciente+'</div>'+
+  '<div style="text-align:center;padding:24px;color:var(--text-3)">Carregando…</div>');
   try {
-    const r=await fetchWithTimeout(`${SB_URL}/rest/v1/sessoes_fisio?paciente_nome=eq.${encodeURIComponent(nomePaciente)}&order=data_sessao.asc`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
-    const sessoes=await r.json();
+    const [pacRows, sessR] = await Promise.all([
+      sbGet('pacientes_fisio','id').catch(()=>[]),
+      fetchWithTimeout(`${SB_URL}/rest/v1/sessoes_fisio?paciente_nome=eq.${encodeURIComponent(nomePaciente)}&order=data_sessao.asc`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}})
+    ]);
+    const pac = pacRows.find(r=>r.nome===nomePaciente);
+    const sessoes = await sessR.json();
+
+    // Numeração das sessões regulares (para quem não tem numero_sessao gravado — registros antigos)
+    let contador=0;
+    const timeline = sessoes.map(s=>{
+      if((s.tipo||'sessao')==='sessao') contador++;
+      return {...s, _num: s.numero_sessao||contador};
+    });
+
+    // Avaliação inicial entra como primeiro evento da linha do tempo
+    const itens = [];
+    if(pac){
+      itens.push({_tipo:'avaliacao_inicial', data: pac.criado_em, pac});
+    }
+    timeline.forEach(s=>itens.push({_tipo: s.tipo||'sessao', data: s.data_sessao, s}));
+    // Mais recente primeiro
+    itens.sort((a,b)=> new Date(b.data||0) - new Date(a.data||0));
+
+    const blocos = itens.map(it=>{
+      const dt = it._tipo==='avaliacao_inicial'
+        ? (it.data? new Date(it.data).toLocaleDateString('pt-BR') : '—')
+        : fmtDataBR(it.data);
+
+      if(it._tipo==='avaliacao_inicial'){
+        const p=it.pac;
+        const corpo = campoP('Motivo da procura',p.motivo_procura)+campoP('Queixa principal',p.queixa_principal)+
+          campoP('Dor inicial',p.dor_inicial!=null?p.dor_inicial+'/10':null)+campoP('Histórico relevante',p.historico_relevante)+
+          campoP('Achados da avaliação',p.achados_avaliacao)+campoP('Objetivo do tratamento',p.objetivos_tratamento)+
+          campoP('Conduta inicial',p.conduta_inicial);
+        return '<div style="background:var(--gold-ultra);border:1px solid var(--gold-muted);border-radius:var(--r-md);padding:12px">'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">'+
+        '<span style="background:var(--gold);color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--r-full)">Avaliação inicial</span>'+
+        '<span style="font-size:12px;color:var(--text-2)">'+dt+'</span></div>'+
+        (corpo||'<div style="font-size:12px;color:var(--text-3);font-style:italic;margin-top:3px">Sem dados de avaliação — use "Editar avaliação".</div>')+
+        '</div>';
+      }
+
+      const s=it.s;
+      const badge = it._tipo==='reavaliacao' ? 'Reavaliação' : it._tipo==='avulsa' ? 'Sessão avulsa' : 'Sessão '+s._num;
+      const cor = it._tipo==='reavaliacao' ? {bg:'var(--gold-ultra)',fg:'var(--gold-dark)'} : it._tipo==='avulsa' ? {bg:'var(--bg-2)',fg:'var(--text-2)'} : {bg:'var(--green-light)',fg:'var(--green)'};
+      const temEstruturado = s.como_chegou||s.relato_queixa||s.procedimentos||s.resposta||s.evolucao||s.orientacoes||s.reav_funcao||s.reav_objetivos||s.dor_nivel!=null;
+
+      let corpo;
+      if(it._tipo==='reavaliacao'){
+        const dorIni = pac?.dor_inicial;
+        corpo = campoP('Dor',s.dor_nivel!=null?s.dor_nivel+'/10'+(dorIni!=null?' (inicial: '+dorIni+'/10)':''):null)+
+          campoP('Função / mobilidade',s.reav_funcao)+campoP('Status dos objetivos',s.reav_objetivos)+
+          campoP('Observações',s.evolucao)+(!temEstruturado?campoP('Observações',s.observacao):'');
+      } else {
+        corpo = campoP('Profissional',s.profissional)+campoP('Como chegou',s.como_chegou)+campoP('Relato',s.relato_queixa)+
+          campoP('Realizado',s.procedimentos)+campoP('Resposta',s.resposta)+campoP('Dor',s.dor_nivel!=null?s.dor_nivel+'/10':null)+
+          campoP('Evolução',s.evolucao)+campoP('Orientações',s.orientacoes)+
+          (!temEstruturado?campoP(it._tipo==='avulsa'?'Detalhes':'Observações',s.observacao):'');
+      }
+
+      return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);padding:12px">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">'+
+      '<span style="background:'+cor.bg+';color:'+cor.fg+';font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--r-full)">'+badge+'</span>'+
+      '<span style="font-size:12px;color:var(--text-2)">'+dt+'</span></div>'+
+      (corpo||'<div style="font-size:12px;color:var(--text-3);font-style:italic;margin-top:3px">Sem observações</div>')+
+      '</div>';
+    });
+
     abrirModal(
       '<div class="mdt"><i class="ti ti-clipboard-text" style="margin-right:8px;color:var(--gold)"></i>Prontuário — '+nomePaciente+'</div>'+
-      (sessoes.length?
-      '<div style="display:flex;flex-direction:column;gap:8px;max-height:400px;overflow-y:auto">'+
-      sessoes.map((s,i)=>{
-        const iso=String(s.data_sessao||'').split('T')[0];const[y,m,d]=iso.split('-');
-        const dt=iso?d+'/'+m+'/'+y.slice(2):'—';
-        return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);padding:12px">'+
-        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
-        '<span style="background:var(--green-light);color:var(--green);font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--r-full)">Sessão '+(i+1)+'</span>'+
-        '<span style="font-size:12px;color:var(--text-2)">'+dt+'</span></div>'+
-        (s.observacao?'<div style="font-size:12px;color:var(--text-1);line-height:1.5">'+s.observacao+'</div>':
-        '<div style="font-size:12px;color:var(--text-3);font-style:italic">Sem observações</div>')+
-        '</div>';
-      }).join('')+'</div>'
-      :'<div style="text-align:center;padding:24px;color:var(--text-3)">Nenhuma sessão registrada</div>')+
-      '<div class="mdf"><button class="btn btnp" onclick="fecharModal()">Fechar</button></div>'
+      (blocos.length?
+      '<div style="display:flex;flex-direction:column;gap:8px;max-height:460px;overflow-y:auto">'+blocos.join('')+'</div>'
+      :'<div style="text-align:center;padding:24px;color:var(--text-3)">Nenhum registro ainda</div>')+
+      '<div class="mdf"><button class="btn" onclick="fecharModal();abrirReavaliacao(\''+esc(nomePaciente)+'\')"><i class="ti ti-refresh"></i> Reavaliação</button>'+
+      '<button class="btn btnp" onclick="fecharModal()">Fechar</button></div>'
     );
   } catch(e){alert('Erro: '+e.message);}
 }
@@ -7197,8 +7485,21 @@ function set(h){document.getElementById('mn').innerHTML=h;}
 function mc(lb,cor,vl,s2){return '<div class="mc"><div class="lb">'+lb+'</div><div class="vl '+cor+'">'+vl+'</div><div class="s2">'+s2+'</div></div>';}
 function fs(n,cor,lb){return '<div class="fs"><div class="fn" style="color:'+cor+'">'+n+'</div><div class="fl">'+lb+'</div></div>';}
 function dr(lb,val){return '<div class="dr"><span class="dl">'+lb+'</span><span>'+val+'</span></div>';}
+function resumoLinha(lb,val){
+  return val ? '<div style="margin-top:8px"><div class="dl" style="margin-bottom:2px">'+lb+'</div><div style="font-size:13px;color:var(--text-1);line-height:1.5">'+val+'</div></div>' : '';
+}
 function ncell(a){const id=a&&a.id?a.id:0;const n=a&&a.n?a.n:'?';return '<span style="display:flex;align-items:center"><span class="av '+avcls(id)+'">'+ini(n)+'</span>'+n+'</span>';}
 function esc(s){return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');}
+function optsDor(sel){
+  let o='<option value="">— não avaliado</option>';
+  for(let i=0;i<=10;i++) o+='<option value="'+i+'"'+(sel!=null&&String(sel)===String(i)?' selected':'')+'>'+i+(i===0?' · sem dor':i===10?' · dor máxima':'')+'</option>';
+  return o;
+}
+function fmtDataBR(iso){
+  if(!iso) return '—';
+  const d=String(iso).split('T')[0].split('-');
+  return d.length===3 ? d[2]+'/'+d[1]+'/'+d[0] : '—';
+}
 
 </script>
 
