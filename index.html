@@ -1330,13 +1330,23 @@ function aplicarPermissoes(){
   if(isFisio){
     if(pontoTop) pontoTop.style.display = 'none';
     if(pontoRel) pontoRel.style.display = 'none';
-    // Esconde também loja, fisio avulsa e estoque para fisio (só alunos e pacientes)
-    ['btnLoja','btnEstoque','btnEncomendas','ni_loja','ni_estoque','ni_encomendas','btnFisioAvulsa','ni_fisio_avulsa'].forEach(id=>{
+    // Fisio só vê: Início, Alunos (p_alunos), Pacientes (f_pacientes)
+    // Esconde tudo que não é permitido
+    ['ni_p_dash','ni_p_agenda','ni_p_fin',
+     'ni_l_vendas','ni_l_estoque','ni_l_encomendas','ni_l_entrada',
+     'ni_fin_geral','ni_dre','ni_logs','btnFinGeral','btnDRE','btnLogs',
+     'btnPonto','btnPontoTop','btn_mobile_mais',
+     'btnAgenda'].forEach(id=>{
       const el = document.getElementById(id);
       if(el) el.style.display = 'none';
     });
-    // Esconde separador de loja se existir
-    document.querySelectorAll('.sep-loja,.sep-fisio-extra').forEach(el=>el.style.display='none');
+    // Esconde seções inteiras (separadores de loja, fisio avulsa, etc)
+    document.querySelectorAll('.sep-loja,.sep-fisio-extra,.sep-relatorios').forEach(el=>el.style.display='none');
+    // Esconde labels de seção loja e relatórios no sidebar
+    document.querySelectorAll('.sb-section-label').forEach(el=>{
+      const txt = el.textContent.trim().toUpperCase();
+      if(['LOJA','CONECTAR','RELATÓRIOS','RELATORIOS'].includes(txt)) el.style.display='none';
+    });
   } else if(perm.verFinGeral){
     // Admin — ponto fica na seção relatórios, não no topo
     if(pontoTop) pontoTop.style.display = 'none';
@@ -1357,8 +1367,8 @@ function checarPermissao(pagina){
   if(pagina==='dre'       && !perm.verFinGeral) return false;
   if(pagina==='logs'      && !perm.verFinGeral) return false;
   if(pagina==='ponto'     && !perm.verPonto) return false;
-  // Fisio só pode ver alunos e pacientes
-  if(isFisio && !['alunos','fisio','home'].includes(pagina)) return false;
+  // Fisio só pode ver início, alunos de pilates e pacientes de fisio
+  if(isFisio && !['home','p_alunos','f_pacientes'].includes(pagina)) return false;
   return true;
 }
 
@@ -3123,6 +3133,10 @@ function consolidadoPontoMes(registros){
   '</div>';
 }
 async function rHome(){
+  // Fisio só vê pacientes — redireciona direto
+  if(usuarioAtual && usuarioAtual.perfil === 'fisio'){
+    nav('f_pacientes'); return;
+  }
   const permH = usuarioAtual ? (PERMISSOES[usuarioAtual.perfil]||PERMISSOES.recepcao) : PERMISSOES.admin;
 
   // Mostra loading imediato enquanto busca dados
