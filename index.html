@@ -1116,18 +1116,30 @@ function dispensarBanner(){
 // ═══════════════════════════════════════════════════════════
 
 // Usuários com hashes SHA-256 das senhas
-// fernando → senha: lm2026admin
-// vitoria  → senha: lm2026recep
+// fernando        → senha: lm2026admin
+// camila          → senha: lm2026camila
+// larissa.marcela → senha: lm2026larissa
+// larissa.mariano → senha: lm2026mariano
 const USUARIOS = {
   'fernando': {
     hash: 'e4442a71d465f5c6391ee250d3727d3dab4787cf90733a6ce81bf7a159200588',
     nome: 'Fernando',
     perfil: 'admin'
   },
-  'vitoria': {
-    hash: '7ba7e02943e7a7962bf258df16ad662f76ec2ab3b14933cea3e89c95338951f7',
-    nome: 'Vitória',
+  'camila': {
+    hash: '458b6d062ebe842bf8a1d4616bcfa35cb68862fa6a4357d8db7a9ae07aa7779a',
+    nome: 'Camila',
     perfil: 'recepcao'
+  },
+  'larissa.marcela': {
+    hash: '3034844bb5be6567178125fca5b2f6962830fda0300083c67cd50f7535debf8c',
+    nome: 'Larissa Marcela',
+    perfil: 'admin'
+  },
+  'larissa.mariano': {
+    hash: '227f8f60777b47587a5ce70a67c18c008c059bb1b73dd27bdb96ffe3b475d898',
+    nome: 'Larissa Mariano',
+    perfil: 'fisio'
   }
 };
 
@@ -1136,22 +1148,23 @@ const PERMISSOES = {
   admin: {
     verFinanceiro: true,
     verFinGeral: true,
+    verRelatorios: true,
+    verPonto: true,
     editarTudo: true
   },
   recepcao: {
     verFinanceiro: true,   // vê financeiro pilates (mensalidades, pagamentos)
     verFinGeral: false,    // não vê financeiro geral consolidado
+    verRelatorios: false,
+    verPonto: true,
     editarTudo: true
   },
-  // Fisioterapeuta que também dá aula de Pilates: só pacientes de fisio (ver/editar) e
-  // a lista de alunos de Pilates (só ver, sem nada financeiro nem relatórios).
   fisio: {
-    verFinanceiro: false,
+    verFinanceiro: false,  // não vê nenhum financeiro
     verFinGeral: false,
-    editarTudo: false,
-    editarPilates: false,       // sem editar/pagar/pausar/excluir aluno de Pilates
-    paginaInicial: 'f_pacientes',
-    paginasPermitidas: ['f_pacientes','p_alunos'] // allowlist — qualquer página fora daqui é bloqueada
+    verRelatorios: false,
+    verPonto: false,
+    editarTudo: false      // só visualiza pacientes e alunos
   }
 };
 
@@ -1285,27 +1298,10 @@ function aplicarPermissoes(){
   // Badge no sidebar
   document.getElementById('sbAvatar').textContent = usuarioAtual.nome.slice(0,2).toUpperCase();
   document.getElementById('sbNome').textContent = usuarioAtual.nome;
-  document.getElementById('sbPerfil').textContent =
-    usuarioAtual.perfil==='admin' ? 'Administrador' :
-    usuarioAtual.perfil==='fisio' ? 'Fisioterapeuta' : 'Recepção';
+  const perfilLabel = usuarioAtual.perfil==='admin' ? 'Administrador' : usuarioAtual.perfil==='fisio' ? 'Fisioterapeuta' : 'Recepção';
+  document.getElementById('sbPerfil').textContent = perfilLabel;
 
-  // Perfis com lista de páginas liberadas (allowlist): esconde tudo no menu, exceto o que está liberado
-  if(perm.paginasPermitidas){
-    document.querySelectorAll('.ni').forEach(n=>{
-      const m = (n.getAttribute('onclick')||'').match(/nav\('([^']+)'\)/);
-      n.style.display = (m && perm.paginasPermitidas.includes(m[1])) ? '' : 'none';
-    });
-    document.querySelectorAll('.nsep').forEach(n=>{ n.style.display = 'none'; });
-    document.querySelectorAll('.nsep').forEach(n=>{
-      const txt = n.textContent.trim();
-      const mostra = (txt==='Fisioterapia' && perm.paginasPermitidas.includes('f_pacientes'))
-        || (txt==='Pilates' && perm.paginasPermitidas.includes('p_alunos'));
-      if(mostra) n.style.display = '';
-    });
-    const brand = document.querySelector('.brand');
-    if(brand) brand.setAttribute('onclick', "nav('"+(perm.paginaInicial||'home')+"')");
-    return; // não aplica as regras de admin/recepção abaixo
-  }
+  const isFisio = usuarioAtual.perfil === 'fisio';
 
   // Oculta itens restritos
   const finBtn = document.querySelector('.ni.pilates[onclick*="p_fin"]');
@@ -1320,7 +1316,7 @@ function aplicarPermissoes(){
   // Botão "Mais" mobile — só admin
   const maisBtn = document.getElementById('btn_mobile_mais');
   if(maisBtn) maisBtn.style.display = perm.verFinGeral ? '' : 'none';
-  // Esconde itens de relatório para recepção
+  // Esconde itens de relatório para recepção e fisio
   ['ni_fin_geral','ni_dre','ni_logs','btnFinGeral','btnDRE','btnLogs'].forEach(id=>{
     const el = document.getElementById(id);
     if(el) el.style.display = perm.verFinGeral ? '' : 'none';
@@ -1329,8 +1325,19 @@ function aplicarPermissoes(){
   if(dreBtn)      dreBtn.style.display      = perm.verFinGeral ? '' : 'none';
   if(logsBtn) logsBtn.style.display = perm.verFinGeral ? '' : 'none';
   if(sepRel) sepRel.style.display = perm.verFinGeral ? '' : 'none';
-  // Ponto: topo para recepção, rodapé relatórios para admin
-  if(perm.verFinGeral){
+
+  // Ponto: fisio não vê; recepção vê no topo; admin vê em relatórios
+  if(isFisio){
+    if(pontoTop) pontoTop.style.display = 'none';
+    if(pontoRel) pontoRel.style.display = 'none';
+    // Esconde também loja, fisio avulsa e estoque para fisio (só alunos e pacientes)
+    ['btnLoja','btnEstoque','btnEncomendas','ni_loja','ni_estoque','ni_encomendas','btnFisioAvulsa','ni_fisio_avulsa'].forEach(id=>{
+      const el = document.getElementById(id);
+      if(el) el.style.display = 'none';
+    });
+    // Esconde separador de loja se existir
+    document.querySelectorAll('.sep-loja,.sep-fisio-extra').forEach(el=>el.style.display='none');
+  } else if(perm.verFinGeral){
     // Admin — ponto fica na seção relatórios, não no topo
     if(pontoTop) pontoTop.style.display = 'none';
     if(pontoRel) pontoRel.style.display = '';
@@ -1344,19 +1351,18 @@ function aplicarPermissoes(){
 function checarPermissao(pagina){
   if(!usuarioAtual) return false;
   const perm = PERMISSOES[usuarioAtual.perfil] || PERMISSOES.recepcao;
-  // Perfis com lista de páginas liberadas (allowlist): qualquer página fora da lista é bloqueada
-  if(perm.paginasPermitidas) return perm.paginasPermitidas.includes(pagina);
+  const isFisio = usuarioAtual.perfil === 'fisio';
   if(pagina==='p_fin' && !perm.verFinanceiro) return false;
   if(pagina==='fin_geral' && !perm.verFinGeral) return false;
   if(pagina==='dre'       && !perm.verFinGeral) return false;
   if(pagina==='logs'      && !perm.verFinGeral) return false;
+  if(pagina==='ponto'     && !perm.verPonto) return false;
+  // Fisio só pode ver alunos e pacientes
+  if(isFisio && !['alunos','fisio','home'].includes(pagina)) return false;
   return true;
 }
 
 function nav(p){
-  const permN = usuarioAtual ? (PERMISSOES[usuarioAtual.perfil]||PERMISSOES.recepcao) : null;
-  // "Início" não existe para perfis restritos (evita expor os números financeiros da home) — manda para a página inicial dela
-  if(permN && permN.paginasPermitidas && p==='home') p = permN.paginaInicial || p;
   pg=p; ft=''; filM='';
   if(!checarPermissao(p)){ semPermissao(); return; }
   document.querySelectorAll('.ni').forEach(n=>n.classList.remove('act'));
@@ -2689,17 +2695,6 @@ async function sbDelete(table, id){
   if(!r.ok) throw new Error(await r.text());
 }
 
-// Busca um único registro pelo ID — usar sempre que possível em vez de buscar por nome,
-// já que dois pacientes podem ter o mesmo nome (ex: duas "Silvia" cadastradas).
-async function sbGetOne(table, id){
-  const r = await fetchWithTimeout(`${SB_URL}/rest/v1/${table}?id=eq.${id}&limit=1`, {
-    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
-  });
-  if(!r.ok) throw new Error(await r.text());
-  const rows = await r.json();
-  return rows[0]||null;
-}
-
 function loading(msg='Carregando…'){
   document.getElementById('mn').innerHTML=
   '<div style="display:flex;align-items:center;justify-content:center;height:300px;flex-direction:column;gap:12px;color:#7A5230">'+
@@ -2886,7 +2881,7 @@ function renderPonto(registros, isAdmin, usuarioLogado){
 }
 
 async function registrarPonto(tipo){
-  const usuario = usuarioAtual?.nome||'Vitória';
+  const usuario = usuarioAtual?.nome||'Camila';
   try {
     await sbInsert('registros_ponto',{
       usuario, tipo,
@@ -2907,7 +2902,7 @@ function abrirRegistroPontoAdmin(diaPreenchido){
   abrirModal(
     '<div class="mdt"><i class="ti ti-clock-plus" style="margin-right:8px;color:var(--gold)"></i>Registrar ponto retroativo</div>'+
     '<label class="fl">Funcionário</label>'+
-    '<select class="fi" id="pt_user"><option>Vitória</option></select>'+
+    '<select class="fi" id="pt_user"><option>Camila</option></select>'+
     '<label class="fl">Tipo</label>'+
     '<select class="fi" id="pt_tipo">'+
     Object.entries(TIPO_PONTO).map(([k,v])=>'<option value="'+k+'">'+v.label+'</option>').join('')+
@@ -2987,10 +2982,10 @@ function consolidadoPontoMes(registros){
 
   const diasUteis = getDiasUteis();
 
-  // Filtra registros da Vitória no mês/ano selecionado
+  // Filtra registros da Camila no mês/ano selecionado
   const regVit = registros.filter(r=>{
     const d=new Date(r.horario);
-    return r.usuario==='Vitória' && d.getMonth()===mes && d.getFullYear()===ano;
+    return r.usuario==='Camila' && d.getMonth()===mes && d.getFullYear()===ano;
   });
 
   // Agrupa por dia
@@ -3045,7 +3040,7 @@ function consolidadoPontoMes(registros){
   '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'+
   '<button class="btn btns" onclick="window._mesPrev()"><i class="ti ti-chevron-left"></i></button>'+
   '<div style="flex:1">'+
-  '<div style="font-size:16px;font-weight:700;color:var(--text-1)">Fechamento — Vitória</div>'+
+  '<div style="font-size:16px;font-weight:700;color:var(--text-1)">Fechamento — Camila</div>'+
   '<div style="font-size:13px;color:var(--gold-dark);font-weight:600">'+nomesMes[mes]+' '+ano+(isAtual?' <span style="font-size:10px;color:var(--text-3)">(atual · até hoje)</span>':'')+'</div>'+
   '</div>'+
   '<button class="btn btns" onclick="window._mesNext()" '+(isAtual?'disabled style="opacity:.3"':'')+'>'+
@@ -3360,9 +3355,6 @@ async function navPAlunos(){
 
 function renderPAlunos(){
   const dados = window._alunosDB || AL;
-  const permP = usuarioAtual ? (PERMISSOES[usuarioAtual.perfil]||PERMISSOES.recepcao) : PERMISSOES.admin;
-  const vePgto = permP.verFinanceiro;
-  const podeEditar = permP.editarPilates!==false;
   const tabs=[{s:'A',l:'Ativos'},{s:'P',l:'Prospects'},{s:'E',l:'Experimentais'},{s:'AV',l:'Avulsos'},{s:'PA',l:'Pausados'}];
   const cnt={};tabs.forEach(t=>cnt[t.s]=dados.filter(a=>a.s===t.s).length);
   const lista=dados.filter(a=>a.s===alTab&&(!ft||a.n.toLowerCase().includes(ft.toLowerCase())||(a.h||'').toLowerCase().includes(ft.toLowerCase())));
@@ -3370,12 +3362,11 @@ function renderPAlunos(){
   set('<div class="pt">Alunos</div><div class="ps">'+cnt.A+' ativos · '+cnt.P+' prospects · '+cnt.E+' experimentais · '+cnt.AV+' avulsos</div>'+
   '<div class="tabs">'+tabs.map(t=>'<button class="tab'+(alTab===t.s?' act actb':'')+'" onclick="alTab=\''+t.s+'\';renderPAlunos()">'+t.l+' ('+cnt[t.s]+')</button>').join('')+'</div>'+
   '<div class="tb"><input class="srch" placeholder="Buscar nome ou horário…" oninput="ft=this.value;renderPAlunos()" value="'+ft+'">'+
-  (podeEditar?'<div style="margin-left:auto"><button class="btn btnb" onclick="abrirCadAluno()"><i class="ti ti-plus"></i> Novo aluno</button></div>':'')+'</div>'+
-  '<div class="tw"><table><thead><tr><th>Nome</th><th>Horário</th><th>Plano</th>'+(vePgto?'<th>Próx. vencto</th><th>Valor</th>':'')+'<th></th></tr></thead><tbody>'+
-  (lista.length?lista.map((a,i)=>'<tr onclick="verAlunoIdx('+i+')" style="cursor:pointer"><td>'+ncell(a)+'</td><td style="color:#7A5230">'+(a.h||'—')+'</td><td>'+a.pl+'</td>'+
-  (vePgto?'<td>'+(a.px||'—')+'</td><td style="color:#B8924A;font-weight:600">R$ '+a.v+'</td>':'')+
+  '<div style="margin-left:auto"><button class="btn btnb" onclick="abrirCadAluno()"><i class="ti ti-plus"></i> Novo aluno</button></div></div>'+
+  '<div class="tw"><table><thead><tr><th>Nome</th><th>Horário</th><th>Plano</th><th>Próx. vencto</th><th>Valor</th><th></th></tr></thead><tbody>'+
+  (lista.length?lista.map((a,i)=>'<tr onclick="verAlunoIdx('+i+')" style="cursor:pointer"><td>'+ncell(a)+'</td><td style="color:#7A5230">'+(a.h||'—')+'</td><td>'+a.pl+'</td><td>'+(a.px||'—')+'</td><td style="color:#B8924A;font-weight:600">R$ '+a.v+'</td>'+
   '<td><button class="btn btns" onclick="event.stopPropagation();verAlunoIdx('+i+')">ver</button></td></tr>').join(''):
-  '<tr><td colspan="'+(vePgto?6:4)+'" style="text-align:center;padding:20px;color:#7A5230">Nenhum resultado</td></tr>')+
+  '<tr><td colspan="6" style="text-align:center;padding:20px;color:#7A5230">Nenhum resultado</td></tr>')+
   '</tbody></table></div>');
 }
 
@@ -3387,9 +3378,6 @@ function verAlunoIdx(i){
 
 function verAlunoDetalhe(a){
   const isPausado = a.s==='PA';
-  const permP = usuarioAtual ? (PERMISSOES[usuarioAtual.perfil]||PERMISSOES.recepcao) : PERMISSOES.admin;
-  const vePgto = permP.verFinanceiro;
-  const podeEditar = permP.editarPilates!==false;
   set(
     '<div class="tb">'+
     '<button class="btn" onclick="navPAlunos()"><i class="ti ti-arrow-left"></i> Voltar</button>'+
@@ -3407,25 +3395,23 @@ function verAlunoDetalhe(a){
     '<div class="dp"><h3>Dados</h3>'+
     dr('Plano',a.pl||'—')+
     dr('Horário(s)',a.h||'—')+
-    (vePgto?
-      dr('Valor mensal','R$ '+(a.v||0))+
-      dr('Último pagto',a.pg||'—')+
-      dr('Próx. vencimento',a.px&&a.px!=='parceria'?
-        '<span style="color:'+(vencido(a.px)?'#C0392B':proxVencer(a.px)?'#E67E22':'#2D7A3A')+'">'+a.px+'</span>'
-        :(a.px||'—'))
-    :'')+
+    dr('Valor mensal','R$ '+(a.v||0))+
+    dr('Último pagto',a.pg||'—')+
+    dr('Próx. vencimento',a.px&&a.px!=='parceria'?
+      '<span style="color:'+(vencido(a.px)?'#C0392B':proxVencer(a.px)?'#E67E22':'#2D7A3A')+'">'+a.px+'</span>'
+      :(a.px||'—'))+
     '</div>'+
 
     '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-    (a.s==='A'&&vePgto?'<button class="btn btnb" onclick="abrirPagPilates(\''+esc(a.n)+'\','+(a.v||0)+')"><i class="ti ti-cash"></i> Registrar pagamento</button>':'')+
-    (a.s==='A'&&podeEditar?'<button class="btn" onclick="abrirTroca(\''+esc(a.n)+'\',\''+esc(a.h||'')+'\')"><i class="ti ti-arrows-exchange"></i> Troca de aula</button>':'')+
-    (vePgto?'<button class="btn" onclick="verHistoricoPagamentos(\''+esc(a.n)+'\')"><i class="ti ti-history"></i> Histórico pgtos</button>':'')+
-    (a.s==='E'&&podeEditar?'<button class="btn btnb" onclick="converterAtivoObj()"><i class="ti ti-user-check"></i> Converter para ativo</button>':'')+
-    (a.s==='P'&&podeEditar?'<button class="btn btnb" onclick="alert(\'Agendar experimental!\')"><i class="ti ti-calendar-plus"></i> Agendar experimental</button>':'')+
-    (a.s==='A'&&podeEditar?'<button class="btn" onclick="pausarAluno()"><i class="ti ti-pause-circle"></i> Pausar aluno</button>':'')+
-    (isPausado&&podeEditar?'<button class="btn btnb" onclick="reativarAluno()"><i class="ti ti-player-play"></i> Reativar aluno</button>':'')+
-    (podeEditar?'<button class="btn" onclick="abrirEditarAluno()"><i class="ti ti-pencil"></i> Editar</button>':'')+
-    (podeEditar?'<button class="btn" style="color:#C0392B;border-color:rgba(192,57,43,.3)" onclick="excluirAluno()"><i class="ti ti-trash"></i> Excluir</button>':'')+
+    (a.s==='A'?'<button class="btn btnb" onclick="abrirPagPilates(\''+esc(a.n)+'\','+(a.v||0)+')"><i class="ti ti-cash"></i> Registrar pagamento</button>':'')+
+    (a.s==='A'?'<button class="btn" onclick="abrirTroca(\''+esc(a.n)+'\',\''+esc(a.h||'')+'\')"><i class="ti ti-arrows-exchange"></i> Troca de aula</button>':'')+
+    '<button class="btn" onclick="verHistoricoPagamentos(\''+esc(a.n)+'\')"><i class="ti ti-history"></i> Histórico pgtos</button>'+
+    (a.s==='E'?'<button class="btn btnb" onclick="converterAtivoObj()"><i class="ti ti-user-check"></i> Converter para ativo</button>':'')+
+    (a.s==='P'?'<button class="btn btnb" onclick="alert(\'Agendar experimental!\')"><i class="ti ti-calendar-plus"></i> Agendar experimental</button>':'')+
+    (a.s==='A'?'<button class="btn" onclick="pausarAluno()"><i class="ti ti-pause-circle"></i> Pausar aluno</button>':'')+
+    (isPausado?'<button class="btn btnb" onclick="reativarAluno()"><i class="ti ti-player-play"></i> Reativar aluno</button>':'')+
+    '<button class="btn" onclick="abrirEditarAluno()"><i class="ti ti-pencil"></i> Editar</button>'+
+    '<button class="btn" style="color:#C0392B;border-color:rgba(192,57,43,.3)" onclick="excluirAluno()"><i class="ti ti-trash"></i> Excluir</button>'+
     '</div>'
   );
   window._alunoAtual = a;
@@ -4010,7 +3996,7 @@ function renderFDash(dados){
   dados.map((p,i)=>{
     const pct=p.sessoes?Math.min(100,Math.round(p.realizadas/p.sessoes*100)):null;
     const ok=p.sessoes&&p.realizadas>=p.sessoes;
-    return '<tr onclick="verPacientePorId('+(p.id!=null?p.id:'null')+')" style="cursor:pointer">'+
+    return '<tr onclick="navFPacienteDetalhe('+i+','+JSON.stringify(dados).replace(/</g,'&lt;').split('').map(c=>c).join('')+')">'+
     '<td><strong>'+p.n+'</strong></td><td style="color:#666">'+(p.sessoes||'—')+'</td><td>'+p.realizadas+'</td>'+
     '<td style="min-width:120px"><div style="display:flex;align-items:center;gap:8px">'+
     (pct!=null?'<div style="flex:1;height:6px;border-radius:3px;background:#f1f0e8"><div style="width:'+pct+'%;height:100%;border-radius:3px;background:'+(ok?'#16a34a':'#059669')+'"></div></div><span style="font-size:11px;color:#666">'+pct+'%</span>':'<span style="color:#aaa;font-size:11px">livre</span>')+
@@ -4027,27 +4013,17 @@ async function navFPacientes(){
       sbGet('sessoes_fisio','data_sessao').catch(()=>[])
     ]);
 
-    // Agrupa datas e sessões completas por paciente_id, e guarda a última (mais recente) de cada um
+    // Agrupa datas por paciente_id
     const datasMap = {};
-    const ultimaMap = {};
-    const sessoesMap = {};
-    if(!window._sessoesById) window._sessoesById = {};
-    sessRows.forEach(s=>{ if(s.id!=null) window._sessoesById[s.id]=s; }); // índice p/ edição, inclui avulsas sem paciente_id
     sessRows.forEach(s=>{
-      if(!s.paciente_id) return; // avulsas não têm paciente_id
       if(!datasMap[s.paciente_id]) datasMap[s.paciente_id]=[];
-      if(!sessoesMap[s.paciente_id]) sessoesMap[s.paciente_id]=[];
       if(s.data_sessao){
         // Parseia diretamente sem new Date() para evitar problema de timezone
         const iso = String(s.data_sessao).split('T')[0];
         const [y,m,d] = iso.split('-');
         datasMap[s.paciente_id].push(d+'/'+m+'/'+y.slice(2));
       }
-      sessoesMap[s.paciente_id].push(s);
-      // sessRows vem ordenado por data_sessao asc — a última iteração é a mais recente
-      ultimaMap[s.paciente_id] = s;
     });
-    window._fisioSessoesCache = sessoesMap;
 
     // Verifica e dá alta automática para quem completou
     const paraAltaAutomatica = pacRows.filter(r=>
@@ -4065,31 +4041,14 @@ async function navFPacientes(){
       paraAltaAutomatica.forEach(r=>{ r.status='alta'; });
     }
 
-    const merged = pacRows.map(r=>{
-      const ultima = ultimaMap[r.id];
-      return {
-        id:r.id, n:r.nome, tel:r.telefone,
-        sessoes:r.sessoes_contratadas,
-        realizadas:r.sessoes_realizadas||0,
-        status:r.status||'ativo',
-        s:r.status||'ativo',
-        datas: datasMap[r.id]||[],
-        // Avaliação inicial
-        motivo_procura: r.motivo_procura,
-        queixa_principal: r.queixa_principal,
-        historico_relevante: r.historico_relevante,
-        dor_inicial: r.dor_inicial,
-        achados_avaliacao: r.achados_avaliacao,
-        objetivos_tratamento: r.objetivos_tratamento,
-        conduta_inicial: r.conduta_inicial,
-        proxima_reavaliacao: r.proxima_reavaliacao,
-        criado_em: r.criado_em,
-        // Resumo derivado da última sessão/reavaliação
-        ultimaEvolucao: ultima?.evolucao || ultima?.relato_queixa || ultima?.observacao || null,
-        ultimaData: ultima?.data_sessao || null,
-        planoAtual: ultima?.orientacoes || r.conduta_inicial || null,
-      };
-    });
+    const merged = pacRows.map(r=>({
+      id:r.id, n:r.nome, tel:r.telefone,
+      sessoes:r.sessoes_contratadas,
+      realizadas:r.sessoes_realizadas||0,
+      status:r.status||'ativo',
+      s:r.status||'ativo',
+      datas: datasMap[r.id]||[]
+    }));
 
     window._fisioCache = merged;
     const ativos = merged.filter(p=>p.status!=='alta');
@@ -4117,10 +4076,8 @@ function renderFPacientes(dados){
     dados.map((p,i)=>{
       const pct=p.sessoes?Math.min(100,Math.round(p.realizadas/p.sessoes*100)):null;
       const ok=p.sessoes&&p.realizadas>=p.sessoes;
-      const homonimo = (window._fisioCache||dados).filter(x=>x.n===p.n).length>1; // mesmo nome cadastrado mais de uma vez (mesmo em abas diferentes)
-      return '<div style="background:var(--white);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;border-left:3px solid '+(ok?'#5C7A2E':p.realizadas>0?'#4A6B2E':'#B8924A')+'" onclick="verPacientePorId('+p.id+')">'+
+      return '<div style="background:var(--white);border:1px solid var(--border);border-radius:12px;padding:14px;cursor:pointer;border-left:3px solid '+(ok?'#5C7A2E':p.realizadas>0?'#4A6B2E':'#B8924A')+'" onclick="verPacienteNome(\''+esc(p.n)+'\')">'+
       '<div style="font-size:13px;font-weight:500;margin-bottom:4px;color:var(--brown)">'+p.n+'</div>'+
-      (homonimo?'<div style="font-size:10px;color:var(--gold-dark);margin-bottom:4px"><i class="ti ti-alert-triangle" style="font-size:10px"></i> '+(p.tel||'sem telefone')+' · cadastro #'+p.id+'</div>':'')+
       '<div style="font-size:11px;color:var(--brown-light);margin-bottom:8px">'+(p.sessoes?p.realizadas+' / '+p.sessoes+' sessões':p.realizadas+' sessões (livre)')+'</div>'+
       (pct!=null?'<div style="height:5px;border-radius:3px;background:var(--cream-dark)"><div style="width:'+pct+'%;height:100%;border-radius:3px;background:'+(ok?'#5C7A2E':'#4A6B2E')+'"></div></div>':'')+
       '</div>';
@@ -4265,28 +4222,9 @@ function navFAltas(){
   );
 }
 
-// Localiza pelo ID (único) — usar sempre que o ID estiver disponível, pois nomes podem se repetir
-// (ex: dois pacientes chamados "Silvia") e a busca por nome pode pegar o cadastro errado.
-async function verPacientePorId(id){
+function verPacienteNome(nome){
   const cache = window._fisioCache || window._fisioListaAtual || FISIO;
-  let p = cache.find(x=>String(x.id)===String(id));
-  if(!p){
-    await navFPacientes();
-    p = (window._fisioCache||[]).find(x=>String(x.id)===String(id));
-  }
-  if(!p){ console.warn('Paciente não encontrado, id:', id); return; }
-  verPaciente(p);
-}
-
-// Mantida para compatibilidade — evite usar quando o ID estiver disponível (nomes podem se repetir)
-async function verPacienteNome(nome){
-  const cache = window._fisioCache || window._fisioListaAtual || FISIO;
-  let p = cache.find(x=>x.n===nome);
-  if(!p){
-    // Cache ainda não carregada nesta tela (ex: veio do Dashboard) — busca a lista completa e tenta de novo
-    await navFPacientes();
-    p = (window._fisioCache||[]).find(x=>x.n===nome);
-  }
+  const p = cache.find(x=>x.n===nome);
   if(!p){ console.warn('Paciente não encontrado:', nome); return; }
   verPaciente(p);
 }
@@ -4318,21 +4256,6 @@ function verPaciente(pOuIdx){
     '<span style="margin-left:auto"><span class="bdg '+(ok?'bg':p.realizadas>0?'ba':'bx')+'">'+( ok?'Concluído':p.realizadas>0?'Em andamento':'Aguardando')+'</span></span>'+
     '</div>'+
 
-'<div class="dp" style="margin-bottom:16px">'+
-    '<h3>Resumo</h3>'+
-    '<div style="padding:4px 20px 14px">'+
-    resumoLinha('Motivo da procura',p.motivo_procura)+
-    resumoLinha('Queixa principal',p.queixa_principal)+
-    resumoLinha('Objetivo',p.objetivos_tratamento)+
-    resumoLinha('Última evolução',p.ultimaEvolucao?(p.ultimaData?fmtDataBR(p.ultimaData)+' — ':'')+p.ultimaEvolucao:null)+
-    resumoLinha('Plano atual',p.planoAtual)+
-    (!p.motivo_procura&&!p.queixa_principal&&!p.objetivos_tratamento?
-      '<div style="font-size:11px;color:var(--text-3);font-style:italic;margin-top:2px">Avaliação inicial incompleta — use "Editar avaliação" abaixo para preenchê-la.</div>':'')+
-    '</div>'+
-    dr('Sessões',p.sessoes?p.realizadas+' de '+p.sessoes+' contratadas':p.realizadas+' realizadas (sem plano fixo)')+
-    dr('Próxima reavaliação',p.proxima_reavaliacao?fmtDataBR(p.proxima_reavaliacao):'a definir')+
-    '</div>'+
-
     (pct!=null?
     '<div style="margin-bottom:16px">'+
     '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-2);margin-bottom:6px">'+
@@ -4342,216 +4265,26 @@ function verPaciente(pOuIdx){
     ok?'<div style="font-size:11px;color:#2D7A3A;margin-top:4px;font-weight:600">✓ Tratamento completo!</div>':'')+
     '</div>':'')+
 
-    '<div class="dp"><h3>Sessões ('+((window._fisioSessoesCache&&window._fisioSessoesCache[p.id])?window._fisioSessoesCache[p.id].length:0)+')</h3>'+
-    '<div style="padding:12px 16px">'+
-    (function(){
-      const lista = (window._fisioSessoesCache&&window._fisioSessoesCache[p.id])?window._fisioSessoesCache[p.id].slice().reverse():[];
-      if(!lista.length) return '<div style="padding:12px 0;color:var(--text-3);font-size:13px;text-align:center">Nenhuma sessão registrada ainda — use "Registrar sessão" abaixo.</div>';
-      return '<div style="display:flex;flex-direction:column;gap:8px">'+
-        lista.map(s=>blocoSessaoInline(s, p.dor_inicial, true)).join('')+
-        '</div>';
-    })()+
-    '</div>'+
+    '<div class="dp"><h3>Histórico de sessões</h3>'+
+    (p.datas&&p.datas.length?
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;margin-top:4px">'+
+      p.datas.map((d,i)=>
+        '<div style="background:var(--green-light);border:1px solid rgba(45,122,58,.2);border-radius:var(--r-sm);padding:7px 10px;text-align:center">'+
+        '<div style="font-size:10px;color:var(--green);font-weight:700;text-transform:uppercase;letter-spacing:.04em">Sessão '+(i+1)+'</div>'+
+        '<div style="font-size:12px;color:var(--text-1);font-weight:500;margin-top:2px">'+(d||'—')+'</div>'+
+        '</div>'
+      ).join('')+'</div>'
+    :
+      '<div style="padding:12px 0;color:var(--text-3);font-size:13px;text-align:center">Nenhuma sessão registrada ainda</div>'
+    )+
     '</div>'+
 
     '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
-    '<button class="btn btne" onclick="abrirRegistrarSessao('+p.id+',\''+esc(p.n)+'\')"><i class="ti ti-plus"></i> Registrar sessão</button>'+
-    '<button class="btn" onclick="abrirReavaliacao('+p.id+',\''+esc(p.n)+'\')"><i class="ti ti-refresh"></i> Reavaliação</button>'+
-    '<button class="btn" onclick="verProntuario('+p.id+',\''+esc(p.n)+'\')"><i class="ti ti-clipboard-text"></i> Prontuário</button>'+
-    '<button class="btn" onclick="abrirEditarAvaliacao('+p.id+',\''+esc(p.n)+'\')"><i class="ti ti-edit"></i> Editar avaliação</button>'+
+    '<button class="btn btne" onclick="abrirRegistrarSessao(\''+esc(p.n)+'\')"><i class="ti ti-plus"></i> Registrar sessão</button>'+
+    '<button class="btn" onclick="verProntuario(\''+esc(p.n)+'\')"><i class="ti ti-clipboard-text"></i> Prontuário</button>'+
     '<button class="btn btnp" onclick="darAlta()"><i class="ti ti-user-check"></i> Dar alta</button>'+
     '</div>'
   );
-}
-
-function abrirEditarAvaliacao(id, nome){
-  const p = (window._fisioCache||[]).find(x=>String(x.id)===String(id)) || window._pacienteAtual || {};
-  abrirModal(
-    '<div class="mdt">Avaliação inicial — '+esc(nome)+'</div>'+
-    '<input type="hidden" id="ea_id" value="'+esc(id)+'">'+
-    '<input type="hidden" id="ea_nome" value="'+esc(nome)+'">'+
-    '<label class="fl">Motivo da procura</label><input class="fi" id="ea_motivo" value="'+esc(p.motivo_procura)+'" placeholder="Ex: indicação médica, dor recorrente, pós-cirúrgico…">'+
-    '<label class="fl">Queixa principal</label><textarea class="fi" id="ea_queixa" rows="2" placeholder="O que o paciente relata em suas palavras">'+(p.queixa_principal||'')+'</textarea>'+
-    '<div class="fr2"><div><label class="fl">Dor inicial (0–10)</label><select class="fi" id="ea_dor">'+optsDor(p.dor_inicial)+'</select></div>'+
-    '<div><label class="fl">Histórico relevante</label><input class="fi" id="ea_historico" value="'+esc(p.historico_relevante)+'" placeholder="Cirurgias, comorbidades, lesões prévias…"></div></div>'+
-    '<label class="fl">Principais achados da avaliação</label><textarea class="fi" id="ea_achados" rows="2" placeholder="Testes, amplitude, força, postura…">'+(p.achados_avaliacao||'')+'</textarea>'+
-    '<label class="fl">Objetivo do tratamento</label><textarea class="fi" id="ea_objetivo" rows="2" placeholder="O que se espera alcançar">'+(p.objetivos_tratamento||'')+'</textarea>'+
-    '<label class="fl">Conduta / plano inicial</label><textarea class="fi" id="ea_conduta" rows="2" placeholder="Linha de tratamento proposta">'+(p.conduta_inicial||'')+'</textarea>'+
-    '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btne" id="ea_btn" onclick="confirmarEditarAvaliacao()">Salvar</button></div>'
-  );
-}
-
-async function confirmarEditarAvaliacao(){
-  const id = document.getElementById('ea_id')?.value;
-  const nome = document.getElementById('ea_nome')?.value;
-  const btn  = document.getElementById('ea_btn');
-  if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
-  try {
-    const pac = await sbGetOne('pacientes_fisio', id);
-    if(!pac){ alert('Paciente não encontrado.'); if(btn){btn.disabled=false;btn.textContent='Salvar';} return; }
-    const dorVal = document.getElementById('ea_dor')?.value;
-    await sbUpdate('pacientes_fisio', pac.id, {
-      motivo_procura: document.getElementById('ea_motivo')?.value.trim()||null,
-      queixa_principal: document.getElementById('ea_queixa')?.value.trim()||null,
-      dor_inicial: dorVal!==''&&dorVal!=null?parseInt(dorVal):null,
-      historico_relevante: document.getElementById('ea_historico')?.value.trim()||null,
-      achados_avaliacao: document.getElementById('ea_achados')?.value.trim()||null,
-      objetivos_tratamento: document.getElementById('ea_objetivo')?.value.trim()||null,
-      conduta_inicial: document.getElementById('ea_conduta')?.value.trim()||null,
-    });
-    await registrarLog('editou avaliação inicial','pacientes_fisio','Avaliação inicial atualizada: '+nome);
-    window._fisioCache = null;
-    fecharModal();
-    await navFPacientes();
-    verPacientePorId(pac.id);
-  } catch(e){ if(btn){ btn.disabled=false; btn.textContent='Salvar'; } alert('Erro: '+e.message); }
-}
-
-// ── SESSÕES: exibição inline + edição ─────────────────────
-function buscarSessaoPorId(id){
-  return (window._sessoesById||{})[id] || null;
-}
-
-// Renderiza um bloco de sessão/avulsa/reavaliação; com botão de editar quando editavel=true
-function blocoSessaoInline(s, dorInicial, editavel){
-  const tipo = s.tipo||'sessao';
-  const dt = fmtDataBR(s.data_sessao);
-  const badge = tipo==='reavaliacao' ? 'Reavaliação' : tipo==='avulsa' ? 'Sessão avulsa' : 'Sessão '+(s.numero_sessao||'');
-  const cor = tipo==='reavaliacao' ? {bg:'var(--gold-ultra)',fg:'var(--gold-dark)'} : tipo==='avulsa' ? {bg:'var(--bg-2)',fg:'var(--text-2)'} : {bg:'var(--green-light)',fg:'var(--green)'};
-  const temEstruturado = s.como_chegou||s.relato_queixa||s.procedimentos||s.resposta||s.evolucao||s.orientacoes||s.reav_funcao||s.reav_objetivos||s.dor_nivel!=null;
-
-  let corpo;
-  if(tipo==='reavaliacao'){
-    corpo = campoP('Dor',s.dor_nivel!=null?s.dor_nivel+'/10'+(dorInicial!=null?' (inicial: '+dorInicial+'/10)':''):null)+
-      campoP('Função / mobilidade',s.reav_funcao)+campoP('Status dos objetivos',s.reav_objetivos)+
-      campoP('Observações',s.evolucao)+(!temEstruturado?campoP('Observações',s.observacao):'');
-  } else {
-    corpo = campoP('Profissional',s.profissional)+campoP('Como chegou',s.como_chegou)+campoP('Relato',s.relato_queixa)+
-      campoP('Realizado',s.procedimentos)+campoP('Resposta',s.resposta)+campoP('Dor',s.dor_nivel!=null?s.dor_nivel+'/10':null)+
-      campoP('Evolução',s.evolucao)+campoP('Orientações',s.orientacoes)+
-      (!temEstruturado?campoP(tipo==='avulsa'?'Detalhes':'Observações',s.observacao):'');
-  }
-
-  return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);padding:12px">'+
-  '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">'+
-  '<span style="background:'+cor.bg+';color:'+cor.fg+';font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--r-full)">'+badge+'</span>'+
-  '<span style="font-size:12px;color:var(--text-2)">'+dt+'</span>'+
-  (editavel&&s.id?'<button class="btn" style="margin-left:auto;padding:3px 10px;font-size:11px" onclick="abrirEditarSessao('+s.id+')"><i class="ti ti-edit" style="font-size:11px"></i> Editar</button>':'')+
-  '</div>'+
-  (corpo||'<div style="font-size:12px;color:var(--text-3);font-style:italic;margin-top:3px">Sem observações</div>')+
-  '</div>';
-}
-
-function abrirEditarSessao(id){
-  const s = buscarSessaoPorId(id);
-  if(!s){ alert('Sessão não encontrada — volte à lista de pacientes e tente de novo.'); return; }
-  const tipo = s.tipo||'sessao';
-  const iso = String(s.data_sessao||'').split('T')[0];
-
-  if(tipo==='reavaliacao'){
-    abrirModal(
-      '<div class="mdt">Editar reavaliação — '+esc(s.paciente_nome||'')+'</div>'+
-      '<input type="hidden" id="es_id" value="'+s.id+'"><input type="hidden" id="es_tipo" value="reavaliacao">'+
-      '<div class="fr2">'+
-      '<div><label class="fl">Data</label><input class="fi" id="es_data" type="date" value="'+iso+'"></div>'+
-      '<div><label class="fl">Dor atual (0–10)</label><select class="fi" id="es_dor">'+optsDor(s.dor_nivel)+'</select></div>'+
-      '</div>'+
-      '<label class="fl">Função e mobilidade</label><textarea class="fi" id="es_funcao" rows="2">'+(s.reav_funcao||'')+'</textarea>'+
-      '<label class="fl">Status dos objetivos</label><textarea class="fi" id="es_objetivos" rows="2">'+(s.reav_objetivos||'')+'</textarea>'+
-      '<label class="fl">Observações gerais</label><textarea class="fi" id="es_obs" rows="2">'+(s.evolucao||'')+'</textarea>'+
-      '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btne" id="es_btn" onclick="confirmarEditarSessao()">Salvar</button></div>'
-    );
-  } else {
-    abrirModal(
-      '<div class="mdt">Editar '+(tipo==='avulsa'?'sessão avulsa':'sessão')+' — '+esc(s.paciente_nome||'')+'</div>'+
-      (s.observacao&&!(s.procedimentos||s.evolucao)?
-        '<div style="background:var(--bg-2);border-radius:var(--r-md);padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--text-2)"><strong>Registro antigo:</strong> '+s.observacao+'</div>':'')+
-      '<input type="hidden" id="es_id" value="'+s.id+'"><input type="hidden" id="es_tipo" value="'+tipo+'">'+
-      '<div class="fr2">'+
-      '<div><label class="fl">Data</label><input class="fi" id="es_data" type="date" value="'+iso+'"></div>'+
-      '<div><label class="fl">Como chegou</label><input class="fi" id="es_chegou" value="'+esc(s.como_chegou)+'"></div>'+
-      '</div>'+
-      '<label class="fl">Relato / queixa do dia</label><textarea class="fi" id="es_relato" rows="2">'+(s.relato_queixa||'')+'</textarea>'+
-      '<label class="fl">O que foi realizado</label><textarea class="fi" id="es_realizado" rows="2">'+(s.procedimentos||'')+'</textarea>'+
-      '<div class="fr2">'+
-      '<div><label class="fl">Resposta ao atendimento</label><input class="fi" id="es_resposta" value="'+esc(s.resposta)+'"></div>'+
-      '<div><label class="fl">Dor no dia (0–10)</label><select class="fi" id="es_dor">'+optsDor(s.dor_nivel)+'</select></div>'+
-      '</div>'+
-      '<label class="fl">Evolução observada</label><textarea class="fi" id="es_evolucao" rows="2">'+(s.evolucao||'')+'</textarea>'+
-      '<label class="fl">Orientações / próxima conduta</label><textarea class="fi" id="es_orientacoes" rows="2">'+(s.orientacoes||'')+'</textarea>'+
-      '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btne" id="es_btn" onclick="confirmarEditarSessao()">Salvar</button></div>'
-    );
-  }
-}
-
-async function confirmarEditarSessao(){
-  const id   = document.getElementById('es_id')?.value;
-  const tipo = document.getElementById('es_tipo')?.value;
-  const data = document.getElementById('es_data')?.value;
-  const btn  = document.getElementById('es_btn');
-  if(!id||!data){ alert('Preencha a data.'); return; }
-  if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
-  try {
-    const original = buscarSessaoPorId(id);
-    let payload;
-
-    if(tipo==='reavaliacao'){
-      const dorVal    = document.getElementById('es_dor')?.value;
-      const dor       = dorVal!==''&&dorVal!=null?parseInt(dorVal):null;
-      const funcao    = document.getElementById('es_funcao')?.value.trim()||null;
-      const objetivos = document.getElementById('es_objetivos')?.value.trim()||null;
-      const obsGeral  = document.getElementById('es_obs')?.value.trim()||null;
-      payload = {
-        data_sessao: data,
-        dor_nivel: dor,
-        reav_funcao: funcao, reav_mobilidade: funcao, reav_objetivos: objetivos,
-        evolucao: obsGeral,
-        observacao: [
-          dor!=null?'Dor atual: '+dor+'/10':null,
-          funcao?'Função/mobilidade: '+funcao:null,
-          objetivos?'Objetivos: '+objetivos:null,
-          obsGeral?'Obs: '+obsGeral:null,
-        ].filter(Boolean).join(' | ')
-      };
-    } else {
-      const comoChegou  = document.getElementById('es_chegou')?.value.trim()||null;
-      const relato      = document.getElementById('es_relato')?.value.trim()||null;
-      const realizado   = document.getElementById('es_realizado')?.value.trim()||null;
-      const resposta    = document.getElementById('es_resposta')?.value.trim()||null;
-      const dorVal      = document.getElementById('es_dor')?.value;
-      const dor         = dorVal!==''&&dorVal!=null?parseInt(dorVal):null;
-      const evolucao    = document.getElementById('es_evolucao')?.value.trim()||null;
-      const orientacoes = document.getElementById('es_orientacoes')?.value.trim()||null;
-      let obs = [
-        comoChegou?'Chegou: '+comoChegou:null,
-        relato?'Relato: '+relato:null,
-        realizado?'Realizado: '+realizado:null,
-        resposta?'Resposta: '+resposta:null,
-        evolucao?'Evolução: '+evolucao:null,
-        orientacoes?'Orientações: '+orientacoes:null,
-      ].filter(Boolean).join(' | ');
-      // Sessão avulsa guarda valor/forma de pagamento dentro de observacao — preserva essa marcação ao editar
-      if(tipo==='avulsa'){
-        const tag = (original?.observacao||'').match(/\[Avulsa[^\]]*\]/);
-        if(tag) obs = obs+' '+tag[0];
-      }
-      payload = {
-        data_sessao: data,
-        como_chegou: comoChegou, relato_queixa: relato, procedimentos: realizado,
-        resposta: resposta, dor_nivel: dor, evolucao: evolucao, orientacoes: orientacoes,
-        observacao: obs
-      };
-    }
-
-    await sbUpdate('sessoes_fisio', id, payload);
-    await registrarLog('editou sessão','sessoes_fisio','Sessão #'+id+' editada'+(original?' — '+(original.paciente_nome||''):''));
-    window._fisioCache = null;
-    const pid = window._pacienteAtual?.id || original?.paciente_id;
-    const nome = window._pacienteAtual?.n || original?.paciente_nome;
-    fecharModal();
-    if(pid){ await navFPacientes(); verPacientePorId(pid); }
-    else if(nome){ await navFPacientes(); verPacienteNome(nome); }
-  } catch(e){ if(btn){ btn.disabled=false; btn.textContent='Salvar'; } alert('Erro: '+e.message); }
 }
 
 async function darAlta(){
@@ -4790,7 +4523,7 @@ function abrirEditarVenda(idx){
     '</select></div>'+
     '<div><label class="fl">Vendedor(a)</label><select class="fi" id="vd_vendedor">'+
       '<option value="">— Selecione —</option>'+
-      ['Vitoria','Larissa','Outro'].map(vd=>'<option value="'+vd+'"'+(v.vendedor===vd?' selected':'')+'>'+vd+'</option>').join('')+
+      ['Camila','Larissa','Outro'].map(vd=>'<option value="'+vd+'"'+(v.vendedor===vd?' selected':'')+'>'+vd+'</option>').join('')+
     '</select></div></div>'+
     '<div style="border-top:1px solid var(--border);margin:8px 0 12px;padding-top:12px">'+
     '<div style="font-size:11px;font-weight:600;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Adicionar item à mesma venda</div>'+
@@ -4843,7 +4576,7 @@ async function salvarEdicaoVenda(){
     vendedor:  document.getElementById('vd_vendedor')?.value||null,
     participacao_vitoria:(()=>{
       const vend = document.getElementById('vd_vendedor')?.value;
-      if(vend==='Vitoria') return 'atendeu';
+      if(vend==='Camila') return 'atendeu';
       const radio = document.querySelector('input[name="vd_vitpart"]:checked');
       return (radio&&radio.value!=='nao') ? radio.value : 'nao';
     })(),
@@ -5146,32 +4879,15 @@ async function confirmarPagamento(){
 
 // ── REGISTRAR SESSÃO FISIO NO BANCO ───────────────────────
 async function confirmarSessao(){
-  const pid         = document.getElementById('fs_pid')?.value;
-  const nome        = document.getElementById('fs_nome')?.value;
-  const data        = document.getElementById('fs_data')?.value;
-  const comoChegou  = document.getElementById('fs_chegou')?.value.trim()||null;
-  const relato      = document.getElementById('fs_relato')?.value.trim()||null;
-  const realizado   = document.getElementById('fs_realizado')?.value.trim()||null;
-  const resposta    = document.getElementById('fs_resposta')?.value.trim()||null;
-  const dorVal      = document.getElementById('fs_dor')?.value;
-  const dor         = dorVal!==''&&dorVal!=null?parseInt(dorVal):null;
-  const evolucao    = document.getElementById('fs_evolucao')?.value.trim()||null;
-  const orientacoes = document.getElementById('fs_orientacoes')?.value.trim()||null;
+  const nome = document.getElementById('fs_nome')?.value;
+  const data = document.getElementById('fs_data')?.value;
+  const obs  = document.getElementById('fs_obs')?.value||null;
   const btn  = document.getElementById('fs_btn');
   if(!nome||!data){ alert('Preencha paciente e data.'); return; }
-  if(!realizado){ alert('Descreva o que foi realizado na sessão — mesmo um resumo curto já ajuda a manter o histórico do paciente.'); return; }
-  // Resumo em texto corrido, mantido por compatibilidade com telas antigas que leem "observacao"
-  const obs = [
-    comoChegou?'Chegou: '+comoChegou:null,
-    relato?'Relato: '+relato:null,
-    'Realizado: '+realizado,
-    resposta?'Resposta: '+resposta:null,
-    evolucao?'Evolução: '+evolucao:null,
-    orientacoes?'Orientações: '+orientacoes:null,
-  ].filter(Boolean).join(' | ');
   if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
   try {
-    const pac = pid ? await sbGetOne('pacientes_fisio', pid) : null;
+    const rows = await sbGet('pacientes_fisio','id');
+    const pac  = rows.find(r=>r.nome===nome);
     if(!pac){ alert('Paciente não encontrado no banco.'); btn.disabled=false; btn.textContent='Registrar'; return; }
 
     const novasRealizadas = (pac.sessoes_realizadas||0) + 1;
@@ -5200,17 +4916,7 @@ async function confirmarSessao(){
       paciente_id: pac.id,
       paciente_nome: nome,
       data_sessao: data,
-      observacao: obs,
-      tipo: 'sessao',
-      numero_sessao: novasRealizadas,
-      profissional: usuarioAtual?.nome||null,
-      como_chegou: comoChegou,
-      relato_queixa: relato,
-      procedimentos: realizado,
-      resposta: resposta,
-      evolucao: evolucao,
-      orientacoes: orientacoes,
-      dor_nivel: dor
+      observacao: obs
     });
 
     // Verifica se completou o plano → alta automática
@@ -5223,7 +4929,7 @@ async function confirmarSessao(){
 
     // Atualiza cache
     if(window._fisioCache){
-      const i = window._fisioCache.findIndex(x=>String(x.id)===String(pac.id));
+      const i = window._fisioCache.findIndex(x=>x.n===nome);
       if(i>=0){
         window._fisioCache[i].realizadas = novasRealizadas;
         window._fisioCache[i].datas = datasList;
@@ -5270,7 +4976,7 @@ async function confirmarVenda(){
   const pgto     = document.getElementById('vd_pgto').value||null;
   const vendedor = document.getElementById('vd_vendedor')?.value||null;
   const partVit  = (()=>{
-    if(vendedor==='Vitoria') return 'atendeu';
+    if(vendedor==='Camila') return 'atendeu';
     const radio = document.querySelector('input[name="vd_vitpart"]:checked');
     return (radio&&radio.value!=='nao') ? radio.value : 'nao';
   })();
@@ -5353,14 +5059,7 @@ async function confirmarNovoPaciente(){
       telefone:document.getElementById('fp_tel').value||null,
       sessoes_contratadas:parseInt(document.getElementById('fp_sess').value)||null,
       sessoes_realizadas:0,
-      status:'ativo',
-      motivo_procura:document.getElementById('fp_motivo')?.value.trim()||null,
-      queixa_principal:document.getElementById('fp_queixa')?.value.trim()||null,
-      dor_inicial:document.getElementById('fp_dor')?.value!==''?parseInt(document.getElementById('fp_dor').value):null,
-      historico_relevante:document.getElementById('fp_historico')?.value.trim()||null,
-      achados_avaliacao:document.getElementById('fp_achados')?.value.trim()||null,
-      objetivos_tratamento:document.getElementById('fp_objetivo')?.value.trim()||null,
-      conduta_inicial:document.getElementById('fp_conduta')?.value.trim()||null,
+      status:'ativo'
     });
     await registrarLog('cadastrou paciente', 'pacientes_fisio', 'Novo paciente: '+nome);
     fecharModal();
@@ -5386,19 +5085,6 @@ function abrirNovoPaciente(){
   '<label class="fl">Nome *</label><input class="fi" id="fp_nome" placeholder="Nome completo">'+
   '<div class="fr2"><div><label class="fl">Telefone</label><input class="fi" id="fp_tel" placeholder="(11) 9xxxx-xxxx"></div>'+
   '<div><label class="fl">Sessões contratadas</label><input class="fi" id="fp_sess" type="number" placeholder="10"></div></div>'+
-
-  '<details open style="margin:14px 0 4px;border:1px solid var(--border);border-radius:var(--r-md);padding:10px 14px;background:var(--bg)">'+
-  '<summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--text-1)">Avaliação inicial <span style="font-weight:400;color:var(--text-3)">(recomendado — pode completar depois)</span></summary>'+
-  '<div style="margin-top:12px">'+
-  '<label class="fl">Motivo da procura</label><input class="fi" id="fp_motivo" placeholder="Ex: indicação médica, dor recorrente, pós-cirúrgico…">'+
-  '<label class="fl">Queixa principal</label><textarea class="fi" id="fp_queixa" rows="2" placeholder="O que o paciente relata em suas palavras"></textarea>'+
-  '<div class="fr2"><div><label class="fl">Dor inicial (0–10)</label><select class="fi" id="fp_dor">'+optsDor()+'</select></div>'+
-  '<div><label class="fl">Histórico relevante</label><input class="fi" id="fp_historico" placeholder="Cirurgias, comorbidades, lesões prévias…"></div></div>'+
-  '<label class="fl">Principais achados da avaliação</label><textarea class="fi" id="fp_achados" rows="2" placeholder="Testes, amplitude, força, postura…"></textarea>'+
-  '<label class="fl">Objetivo do tratamento</label><textarea class="fi" id="fp_objetivo" rows="2" placeholder="O que se espera alcançar"></textarea>'+
-  '<label class="fl">Conduta / plano inicial</label><textarea class="fi" id="fp_conduta" rows="2" placeholder="Linha de tratamento proposta"></textarea>'+
-  '</div></details>'+
-
   '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btne" id="fp_btn" onclick="confirmarNovoPaciente()">Salvar</button></div>');
 }
 
@@ -5439,10 +5125,8 @@ function abrirSessaoAvulsa(){
     '</select></div>'+
     '</div>'+
 
-    '<label class="fl">O que foi realizado *</label>'+
-    '<textarea class="fi" id="av_realizado" rows="2" placeholder="Queixa e procedimento realizado nesta sessão"></textarea>'+
-    '<label class="fl">Resposta / evolução</label>'+
-    '<textarea class="fi" id="av_resposta" rows="2" placeholder="Como o paciente respondeu ao atendimento"></textarea>'+
+    '<label class="fl">Observações</label>'+
+    '<textarea class="fi" id="av_obs" rows="2" placeholder="Queixa, procedimento, evolução…"></textarea>'+
 
     '<div class="mdf">'+
     '<button class="btn" onclick="fecharModal()">Cancelar</button>'+
@@ -5462,32 +5146,25 @@ function atualizarPrecoAvulsa(dataStr){
 }
 
 async function confirmarSessaoAvulsa(){
-  const nome      = document.getElementById('av_nome')?.value.trim();
-  const data      = document.getElementById('av_data')?.value;
-  const valor     = parseFloat(document.getElementById('av_valor')?.value)||145;
-  const pgto      = document.getElementById('av_pgto')?.value;
-  const fisio     = document.getElementById('av_fisio')?.value;
-  const realizado = document.getElementById('av_realizado')?.value.trim()||null;
-  const resposta  = document.getElementById('av_resposta')?.value.trim()||null;
+  const nome  = document.getElementById('av_nome')?.value.trim();
+  const data  = document.getElementById('av_data')?.value;
+  const valor = parseFloat(document.getElementById('av_valor')?.value)||145;
+  const pgto  = document.getElementById('av_pgto')?.value;
+  const fisio = document.getElementById('av_fisio')?.value;
+  const obs   = document.getElementById('av_obs')?.value||null;
   const btn   = document.getElementById('av_btn');
 
   if(!nome){ alert('Informe o nome do paciente.'); return; }
   if(!data){ alert('Informe a data da sessão.'); return; }
-  if(!realizado){ alert('Descreva o que foi realizado na sessão — mesmo avulsa, precisa ficar registrado o que aconteceu.'); return; }
   if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
 
   try {
-    // Salva como sessão avulsa — paciente_id null, tipo 'avulsa'
-    const obs = 'Realizado: '+realizado+(resposta?' | Resposta: '+resposta:'');
+    // Salva como sessão avulsa — paciente_id null, tipo 'avulso'
     await sbInsert('sessoes_fisio',{
       paciente_id:   null,
       paciente_nome: nome,
       data_sessao:   data,
-      observacao:    obs+' '+`[Avulsa · ${pgto} · R$${valor}${fisio==='Domicilio'?' · domicílio':''}]`,
-      tipo: 'avulsa',
-      profissional: usuarioAtual?.nome||null,
-      procedimentos: realizado,
-      resposta: resposta
+      observacao:    (obs?obs+' ':'')+`[Avulsa · ${pgto} · R$${valor}${fisio==='Domicilio'?' · domicílio':''}]`
     });
 
     await registrarLog('registrou sessão avulsa','sessoes_fisio',
@@ -5518,98 +5195,12 @@ async function confirmarSessaoAvulsa(){
   }
 }
 
-// ── REAVALIAÇÃO ────────────────────────────────────────────
-async function abrirReavaliacao(id, nome){
-  const p = (window._fisioCache||[]).find(x=>String(x.id)===String(id));
+function abrirRegistrarSessao(nome){
   const hoje=new Date(); const dd=String(hoje.getDate()).padStart(2,'0'),mm=String(hoje.getMonth()+1).padStart(2,'0'),yy=hoje.getFullYear();
-  const dorIni = p?.dor_inicial;
-  abrirModal(
-    '<div class="mdt"><i class="ti ti-refresh" style="color:var(--gold);margin-right:8px"></i>Reavaliação — '+esc(nome)+'</div>'+
-    '<div style="background:var(--gold-ultra);border:1px solid var(--gold-muted);border-radius:var(--r-md);padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--text-2)">'+
-    (dorIni!=null?'Dor na avaliação inicial: <strong>'+dorIni+'/10</strong>':'Sem dor inicial registrada')+
-    ' · Não conta como sessão do plano contratado.'+
-    '</div>'+
-    '<input type="hidden" id="rv_pid" value="'+id+'"><input type="hidden" id="rv_nome" value="'+esc(nome)+'">'+
-    '<div class="fr2">'+
-    '<div><label class="fl">Data da reavaliação</label><input class="fi" id="rv_data" type="date" value="'+yy+'-'+mm+'-'+dd+'"></div>'+
-    '<div><label class="fl">Dor atual (0–10)</label><select class="fi" id="rv_dor">'+optsDor()+'</select></div>'+
-    '</div>'+
-    '<label class="fl">Função e mobilidade</label><textarea class="fi" id="rv_funcao" rows="2" placeholder="Comparado à avaliação inicial: ganhos de amplitude, força, funcionalidade…"></textarea>'+
-    '<label class="fl">Status dos objetivos</label><textarea class="fi" id="rv_objetivos" rows="2" placeholder="Alcançado, em progresso, sem mudança…"></textarea>'+
-    '<label class="fl">Observações gerais</label><textarea class="fi" id="rv_obs" rows="2" placeholder="Outras observações da reavaliação"></textarea>'+
-    '<label class="fl">Próxima reavaliação (opcional)</label><input class="fi" id="rv_proxima" type="date">'+
-    '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btnp" id="rv_btn" onclick="confirmarReavaliacao()"><i class="ti ti-check"></i> Salvar reavaliação</button></div>'
-  );
-}
-
-async function confirmarReavaliacao(){
-  const pid      = document.getElementById('rv_pid')?.value;
-  const nome     = document.getElementById('rv_nome')?.value;
-  const data     = document.getElementById('rv_data')?.value;
-  const dorVal   = document.getElementById('rv_dor')?.value;
-  const dor      = dorVal!==''&&dorVal!=null?parseInt(dorVal):null;
-  const funcao   = document.getElementById('rv_funcao')?.value.trim()||null;
-  const objetivos= document.getElementById('rv_objetivos')?.value.trim()||null;
-  const obsGeral = document.getElementById('rv_obs')?.value.trim()||null;
-  const proxima  = document.getElementById('rv_proxima')?.value||null;
-  const btn      = document.getElementById('rv_btn');
-  if(!nome||!data){ alert('Preencha a data da reavaliação.'); return; }
-  if(!funcao && !objetivos && !obsGeral && dor==null){ alert('Registre ao menos um dado da reavaliação (dor, função/mobilidade, objetivos ou observações).'); return; }
-  if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
-  try {
-    const pac = pid ? await sbGetOne('pacientes_fisio', pid) : null;
-    const obs = [
-      dor!=null?'Dor atual: '+dor+'/10':null,
-      funcao?'Função/mobilidade: '+funcao:null,
-      objetivos?'Objetivos: '+objetivos:null,
-      obsGeral?'Obs: '+obsGeral:null,
-    ].filter(Boolean).join(' | ');
-
-    await sbInsert('sessoes_fisio',{
-      paciente_id: pac?.id||null,
-      paciente_nome: nome,
-      data_sessao: data,
-      observacao: obs,
-      tipo: 'reavaliacao',
-      profissional: usuarioAtual?.nome||null,
-      dor_nivel: dor,
-      reav_funcao: funcao,
-      reav_mobilidade: funcao,
-      reav_objetivos: objetivos,
-      evolucao: obsGeral
-    });
-
-    if(pac?.id && proxima){
-      await sbUpdate('pacientes_fisio', pac.id, {proxima_reavaliacao: proxima});
-    }
-
-    await registrarLog('registrou reavaliação','sessoes_fisio','Reavaliação de '+nome+(dor!=null?' — dor atual '+dor+'/10':''));
-    window._fisioCache = null;
-    fecharModal();
-    await navFPacientes();
-    verPacientePorId(pid);
-  } catch(e){ if(btn){ btn.disabled=false; btn.textContent='Salvar reavaliação'; } alert('Erro: '+e.message); }
-}
-
-function abrirRegistrarSessao(id, nome){
-  const hoje=new Date(); const dd=String(hoje.getDate()).padStart(2,'0'),mm=String(hoje.getMonth()+1).padStart(2,'0'),yy=hoje.getFullYear();
-  const p = (window._fisioCache||[]).find(x=>String(x.id)===String(id));
-  const numSessao = p ? (p.realizadas||0)+1 : null;
-  abrirModal('<div class="mdt">Registrar sessão — '+esc(nome)+'</div>'+
-  '<div class="ps" style="margin:-4px 0 14px">'+(numSessao?'Sessão nº '+numSessao+' · ':'')+(usuarioAtual?.nome||'')+' · data e profissional preenchidos automaticamente</div>'+
-  '<input type="hidden" id="fs_pid" value="'+id+'"><input type="hidden" id="fs_nome" value="'+esc(nome)+'">'+
-  '<div class="fr2">'+
-  '<div><label class="fl">Data da sessão</label><input class="fi" id="fs_data" type="date" value="'+yy+'-'+mm+'-'+dd+'"></div>'+
-  '<div><label class="fl">Como o paciente chegou</label><input class="fi" id="fs_chegou" placeholder="Ex: bem, com dor, cansado…"></div>'+
-  '</div>'+
-  '<label class="fl">Relato / queixa do dia</label><textarea class="fi" id="fs_relato" rows="2" placeholder="O que o paciente relatou hoje"></textarea>'+
-  '<label class="fl">O que foi realizado *</label><textarea class="fi" id="fs_realizado" rows="2" placeholder="Condutas, exercícios, técnicas aplicadas"></textarea>'+
-  '<div class="fr2">'+
-  '<div><label class="fl">Resposta ao atendimento</label><input class="fi" id="fs_resposta" placeholder="Ex: boa tolerância, referiu alívio…"></div>'+
-  '<div><label class="fl">Dor no dia (0–10)</label><select class="fi" id="fs_dor">'+optsDor()+'</select></div>'+
-  '</div>'+
-  '<label class="fl">Evolução observada</label><textarea class="fi" id="fs_evolucao" rows="2" placeholder="Progresso em relação às sessões anteriores"></textarea>'+
-  '<label class="fl">Orientações / próxima conduta</label><textarea class="fi" id="fs_orientacoes" rows="2" placeholder="Orientações dadas, plano para a próxima sessão"></textarea>'+
+  abrirModal('<div class="mdt">Registrar sessão — '+nome+'</div>'+
+  '<label class="fl">Paciente</label><input class="fi" id="fs_nome" value="'+nome+'" readonly>'+
+  '<label class="fl">Data da sessão</label><input class="fi" id="fs_data" type="date" value="'+yy+'-'+mm+'-'+dd+'">'+
+  '<label class="fl">Observações</label><textarea class="fi" id="fs_obs" rows="2" placeholder="Evolução, intercorrências…"></textarea>'+
   '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button><button class="btn btne" id="fs_btn" onclick="confirmarSessao()">Registrar</button></div>');
 }
 
@@ -5635,11 +5226,11 @@ function abrirNovaVenda(){
     '</select></div>'+
     '<div><label class="fl">Quem atendeu</label><select class="fi" id="vd_vendedor" onchange="toggleVitPart()">'+
       '<option value="Larissa">Larissa</option>'+
-      '<option value="Vitoria">Vitória (atendeu)</option>'+
+      '<option value="Vitoria">Camila (atendeu)</option>'+
     '</select></div>'+
     '</div>'+
     '<div id="vd_part_box" style="background:rgba(201,169,110,.08);border:1px solid rgba(201,169,110,.25);border-radius:var(--r-md);padding:10px 14px;margin-bottom:12px">'+
-    '<label class="fl" style="margin-bottom:6px">Vitória participou?</label>'+
+    '<label class="fl" style="margin-bottom:6px">Camila participou?</label>'+
     '<div style="display:flex;gap:12px">'+
     '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="vd_vitpart" value="nao" checked style="accent-color:var(--gold)"> Não</label>'+
     '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px"><input type="radio" name="vd_vitpart" value="provador" style="accent-color:var(--gold)"> Provador/indicação (3%)</label>'+
@@ -6476,9 +6067,9 @@ function blocoComissaoVitoria(todasVendas){
   const mesAtualKey = String(agora.getMonth()+1).padStart(2,'0')+'/'+agora.getFullYear();
 
   return '<div style="font-size:11px;font-weight:700;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.08em;margin:20px 0 10px">'+
-  '<i class="ti ti-percentage"></i> Comissão — Vitória</div>'+
+  '<i class="ti ti-percentage"></i> Comissão — Camila</div>'+
   '<div class="tw"><table><thead><tr>'+
-  '<th>Mês</th><th>Total loja</th><th>Vendas Vitória</th><th>Comissão</th><th>Valor a pagar</th>'+
+  '<th>Mês</th><th>Total loja</th><th>Vendas Camila</th><th>Comissão</th><th>Valor a pagar</th>'+
   '</tr></thead><tbody>'+
   meses.map(([key,d])=>{
     const [mm,yyyy] = key.split('/');
@@ -6513,7 +6104,7 @@ function blocoComissaoVitoria(todasVendas){
   }).join('')+
   '</tbody></table>'+
   '<div style="padding:10px 16px;font-size:12px;color:var(--text-3);border-top:1px solid var(--border)">'+
-  '<i class="ti ti-info-circle"></i> Regra: vendas que Vitória atendeu → 5% · provador/indicação → 3%'+
+  '<i class="ti ti-info-circle"></i> Regra: vendas que Camila atendeu → 5% · provador/indicação → 3%'+
   '</div></div>';
 }
 
@@ -6657,7 +6248,7 @@ const DESPESAS_FIXAS = [
   {descricao:'Contador',           categoria:'administrativo',  valor:320},
   {descricao:'Sistemas / IA',      categoria:'administrativo',  valor:200},
   {descricao:'Salário Larissa M.', categoria:'pessoal',         valor:3800},
-  {descricao:'Salário Vitória',    categoria:'pessoal',         valor:1200},
+  {descricao:'Salário Camila',     categoria:'pessoal',         valor:1200},
   {descricao:'Gasolina (Larissa)', categoria:'pessoal',         valor:120},
   {descricao:'Limpeza / insumos',  categoria:'insumos',         valor:250},
   {descricao:'Café',               categoria:'insumos',         valor:150},
@@ -7050,9 +6641,9 @@ function renderLogsView(rows){
   const hojeCount  = rows.filter(r=>new Date(r.criado_em)>=hoje).length;
   const pgtos      = rows.filter(r=>r.tabela==='pagamentos');
   const agendaEv   = rows.filter(r=>r.tabela==='google_agenda');
-  const vitoria    = rows.filter(r=>r.perfil==='recepcao');
+  const camila     = rows.filter(r=>r.perfil==='recepcao');
 
-  // Últimos pagamentos registrados pela Vitória
+  // Últimos pagamentos registrados pela Camila
   const ultPgtos = pgtos.filter(r=>r.perfil==='recepcao').slice(0,5);
   // Últimas alterações de agenda
   const ultAgenda = agendaEv.filter(r=>r.perfil==='recepcao').slice(0,5);
@@ -7070,12 +6661,12 @@ function renderLogsView(rows){
     '</div>'+
 
     // ── DESTAQUES ────────────────────────────────────────
-    (vitoria.length>0?
+    (camila.length>0?
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">'+
 
-    // Últimos pagamentos pela Vitória
+    // Últimos pagamentos pela Camila
     '<div><div style="font-size:11px;font-weight:600;color:#16a34a;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
-    '<i class="ti ti-cash"></i> Últimos pagamentos — Vitória</div>'+
+    '<i class="ti ti-cash"></i> Últimos pagamentos — Camila</div>'+
     (ultPgtos.length?
     '<div style="background:var(--glass);border:1px solid rgba(22,163,74,.2);border-radius:12px;overflow:hidden">'+
     ultPgtos.map(r=>'<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(22,163,74,.08)">'+
@@ -7090,7 +6681,7 @@ function renderLogsView(rows){
 
     // Últimas alterações de agenda
     '<div><div style="font-size:11px;font-weight:600;color:#4285F4;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">'+
-    '<i class="ti ti-calendar-event"></i> Últimas alterações de agenda — Vitória</div>'+
+    '<i class="ti ti-calendar-event"></i> Últimas alterações de agenda — Camila</div>'+
     (ultAgenda.length?
     '<div style="background:var(--glass);border:1px solid rgba(66,133,244,.2);border-radius:12px;overflow:hidden">'+
     ultAgenda.map(r=>'<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(66,133,244,.08)">'+
@@ -7562,10 +7153,9 @@ function renderBuscaGlobal(q){
   const res=document.getElementById('bg_result'); if(!res) return;
   q=(q||'').toLowerCase().trim();
   if(q.length<2){ res.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-3);font-size:13px">Digite pelo menos 2 caracteres</div>'; return; }
-  const permB = usuarioAtual ? (PERMISSOES[usuarioAtual.perfil]||PERMISSOES.recepcao) : PERMISSOES.admin;
-  const alunos   = permB.paginasPermitidas && !permB.paginasPermitidas.includes('p_alunos') ? [] : (window._alunosDB||AL).filter(a=>a.n?.toLowerCase().includes(q));
-  const pacientes= permB.paginasPermitidas && !permB.paginasPermitidas.includes('f_pacientes') ? [] : (window._fisioCache||FISIO).filter(p=>p.n?.toLowerCase().includes(q));
-  const estoque  = permB.paginasPermitidas ? [] : (window._estoqueCache||[]).filter(e=>e.item?.toLowerCase().includes(q)||e.marca?.toLowerCase().includes(q));
+  const alunos   =(window._alunosDB||AL).filter(a=>a.n?.toLowerCase().includes(q));
+  const pacientes=(window._fisioCache||FISIO).filter(p=>p.n?.toLowerCase().includes(q));
+  const estoque  =(window._estoqueCache||[]).filter(e=>e.item?.toLowerCase().includes(q)||e.marca?.toLowerCase().includes(q));
   if(!alunos.length&&!pacientes.length&&!estoque.length){ res.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-3);font-size:13px">Nenhum resultado</div>'; return; }
   let html='';
   if(alunos.length){
@@ -7574,7 +7164,7 @@ function renderBuscaGlobal(q){
   }
   if(pacientes.length){
     html+='<div style="font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;padding:8px 4px 4px">Fisioterapia</div>';
-    html+=pacientes.slice(0,5).map(p=>'<div onclick="fecharModal();verPacientePorId('+p.id+')" style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:var(--r-sm);cursor:pointer;background:var(--white)" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="this.style.background=\'var(--white)\'"><div style="width:32px;height:32px;border-radius:50%;background:var(--green-light);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--green)">'+ini(p.n)+'</div><div><div style="font-size:13px;font-weight:500">'+p.n+'</div><div style="font-size:11px;color:var(--text-3)">'+(p.realizadas||0)+'/'+(p.sessoes||'?')+' sessões</div></div></div>').join('');
+    html+=pacientes.slice(0,5).map(p=>'<div onclick="fecharModal();verPacienteNome(\''+esc(p.n)+'\')" style="display:flex;align-items:center;gap:10px;padding:10px;border-radius:var(--r-sm);cursor:pointer;background:var(--white)" onmouseover="this.style.background=\'var(--bg)\'" onmouseout="this.style.background=\'var(--white)\'"><div style="width:32px;height:32px;border-radius:50%;background:var(--green-light);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--green)">'+ini(p.n)+'</div><div><div style="font-size:13px;font-weight:500">'+p.n+'</div><div style="font-size:11px;color:var(--text-3)">'+(p.realizadas||0)+'/'+(p.sessoes||'?')+' sessões</div></div></div>').join('');
   }
   if(estoque.length){
     html+='<div style="font-size:10px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;padding:8px 4px 4px">Estoque</div>';
@@ -7600,68 +7190,28 @@ async function verHistoricoPagamentos(nomeAluno){
   } catch(e){alert('Erro: '+e.message);}
 }
 
-// PRONTUÁRIO FISIOTERAPIA — linha do tempo: avaliação inicial + sessões + reavaliações
-function campoP(lb,val){
-  return (val!=null&&val!=='') ? '<div style="font-size:12px;color:var(--text-1);margin-top:3px;line-height:1.5"><strong style="color:var(--text-2);font-weight:600">'+lb+':</strong> '+val+'</div>' : '';
-}
-async function verProntuario(id, nomePaciente){
-  abrirModal('<div class="mdt"><i class="ti ti-clipboard-text" style="margin-right:8px;color:var(--gold)"></i>Prontuário — '+nomePaciente+'</div>'+
-  '<div style="text-align:center;padding:24px;color:var(--text-3)">Carregando…</div>');
+// PRONTUÁRIO FISIOTERAPIA
+async function verProntuario(nomePaciente){
   try {
-    const [pac, sessR] = await Promise.all([
-      sbGetOne('pacientes_fisio', id).catch(()=>null),
-      fetchWithTimeout(`${SB_URL}/rest/v1/sessoes_fisio?paciente_id=eq.${encodeURIComponent(id)}&order=data_sessao.asc`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}})
-    ]);
-    const sessoes = await sessR.json();
-    if(!window._sessoesById) window._sessoesById = {};
-    sessoes.forEach(s=>{ if(s.id!=null) window._sessoesById[s.id]=s; }); // garante que "Editar" funcione mesmo p/ avulsas
-
-    // Numeração das sessões regulares (para quem não tem numero_sessao gravado — registros antigos)
-    let contador=0;
-    const timeline = sessoes.map(s=>{
-      if((s.tipo||'sessao')==='sessao') contador++;
-      return {...s, _num: s.numero_sessao||contador};
-    });
-
-    // Avaliação inicial entra como primeiro evento da linha do tempo
-    const itens = [];
-    if(pac){
-      itens.push({_tipo:'avaliacao_inicial', data: pac.criado_em, pac});
-    }
-    timeline.forEach(s=>itens.push({_tipo: s.tipo||'sessao', data: s.data_sessao, s}));
-    // Mais recente primeiro
-    itens.sort((a,b)=> new Date(b.data||0) - new Date(a.data||0));
-
-    const blocos = itens.map(it=>{
-      const dt = it._tipo==='avaliacao_inicial'
-        ? (it.data? new Date(it.data).toLocaleDateString('pt-BR') : '—')
-        : fmtDataBR(it.data);
-
-      if(it._tipo==='avaliacao_inicial'){
-        const p=it.pac;
-        const corpo = campoP('Motivo da procura',p.motivo_procura)+campoP('Queixa principal',p.queixa_principal)+
-          campoP('Dor inicial',p.dor_inicial!=null?p.dor_inicial+'/10':null)+campoP('Histórico relevante',p.historico_relevante)+
-          campoP('Achados da avaliação',p.achados_avaliacao)+campoP('Objetivo do tratamento',p.objetivos_tratamento)+
-          campoP('Conduta inicial',p.conduta_inicial);
-        return '<div style="background:var(--gold-ultra);border:1px solid var(--gold-muted);border-radius:var(--r-md);padding:12px">'+
-        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">'+
-        '<span style="background:var(--gold);color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--r-full)">Avaliação inicial</span>'+
-        '<span style="font-size:12px;color:var(--text-2)">'+dt+'</span></div>'+
-        (corpo||'<div style="font-size:12px;color:var(--text-3);font-style:italic;margin-top:3px">Sem dados de avaliação — use "Editar avaliação".</div>')+
-        '</div>';
-      }
-
-      const s = {...it.s, numero_sessao: it.s.numero_sessao||it.s._num};
-      return blocoSessaoInline(s, pac?.dor_inicial, true);
-    });
-
+    const r=await fetchWithTimeout(`${SB_URL}/rest/v1/sessoes_fisio?paciente_nome=eq.${encodeURIComponent(nomePaciente)}&order=data_sessao.asc`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}});
+    const sessoes=await r.json();
     abrirModal(
       '<div class="mdt"><i class="ti ti-clipboard-text" style="margin-right:8px;color:var(--gold)"></i>Prontuário — '+nomePaciente+'</div>'+
-      (blocos.length?
-      '<div style="display:flex;flex-direction:column;gap:8px;max-height:460px;overflow-y:auto">'+blocos.join('')+'</div>'
-      :'<div style="text-align:center;padding:24px;color:var(--text-3)">Nenhum registro ainda</div>')+
-      '<div class="mdf"><button class="btn" onclick="fecharModal();abrirReavaliacao('+id+',\''+esc(nomePaciente)+'\')"><i class="ti ti-refresh"></i> Reavaliação</button>'+
-      '<button class="btn btnp" onclick="fecharModal()">Fechar</button></div>'
+      (sessoes.length?
+      '<div style="display:flex;flex-direction:column;gap:8px;max-height:400px;overflow-y:auto">'+
+      sessoes.map((s,i)=>{
+        const iso=String(s.data_sessao||'').split('T')[0];const[y,m,d]=iso.split('-');
+        const dt=iso?d+'/'+m+'/'+y.slice(2):'—';
+        return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--r-md);padding:12px">'+
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
+        '<span style="background:var(--green-light);color:var(--green);font-size:10px;font-weight:700;padding:2px 8px;border-radius:var(--r-full)">Sessão '+(i+1)+'</span>'+
+        '<span style="font-size:12px;color:var(--text-2)">'+dt+'</span></div>'+
+        (s.observacao?'<div style="font-size:12px;color:var(--text-1);line-height:1.5">'+s.observacao+'</div>':
+        '<div style="font-size:12px;color:var(--text-3);font-style:italic">Sem observações</div>')+
+        '</div>';
+      }).join('')+'</div>'
+      :'<div style="text-align:center;padding:24px;color:var(--text-3)">Nenhuma sessão registrada</div>')+
+      '<div class="mdf"><button class="btn btnp" onclick="fecharModal()">Fechar</button></div>'
     );
   } catch(e){alert('Erro: '+e.message);}
 }
@@ -7688,21 +7238,8 @@ function set(h){document.getElementById('mn').innerHTML=h;}
 function mc(lb,cor,vl,s2){return '<div class="mc"><div class="lb">'+lb+'</div><div class="vl '+cor+'">'+vl+'</div><div class="s2">'+s2+'</div></div>';}
 function fs(n,cor,lb){return '<div class="fs"><div class="fn" style="color:'+cor+'">'+n+'</div><div class="fl">'+lb+'</div></div>';}
 function dr(lb,val){return '<div class="dr"><span class="dl">'+lb+'</span><span>'+val+'</span></div>';}
-function resumoLinha(lb,val){
-  return val ? '<div style="margin-top:8px"><div class="dl" style="margin-bottom:2px">'+lb+'</div><div style="font-size:13px;color:var(--text-1);line-height:1.5">'+val+'</div></div>' : '';
-}
 function ncell(a){const id=a&&a.id?a.id:0;const n=a&&a.n?a.n:'?';return '<span style="display:flex;align-items:center"><span class="av '+avcls(id)+'">'+ini(n)+'</span>'+n+'</span>';}
 function esc(s){return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');}
-function optsDor(sel){
-  let o='<option value="">— não avaliado</option>';
-  for(let i=0;i<=10;i++) o+='<option value="'+i+'"'+(sel!=null&&String(sel)===String(i)?' selected':'')+'>'+i+(i===0?' · sem dor':i===10?' · dor máxima':'')+'</option>';
-  return o;
-}
-function fmtDataBR(iso){
-  if(!iso) return '—';
-  const d=String(iso).split('T')[0].split('-');
-  return d.length===3 ? d[2]+'/'+d[1]+'/'+d[0] : '—';
-}
 
 </script>
 
