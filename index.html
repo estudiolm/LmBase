@@ -3426,9 +3426,11 @@ function verAlunoDetalhe(a){
     (isPausado?'<button class="btn btnb" onclick="reativarAluno()"><i class="ti ti-player-play"></i> Reativar aluno</button>':'')+
     '<button class="btn" onclick="abrirEditarAluno()"><i class="ti ti-pencil"></i> Editar</button>'+
     '<button class="btn" style="color:#C0392B;border-color:rgba(192,57,43,.3)" onclick="excluirAluno()"><i class="ti ti-trash"></i> Excluir</button>'+
-    '</div>'
+    '</div>'+
+    '<div id="oswestry_aluno_box" style="margin-top:18px"></div>'
   );
   window._alunoAtual = a;
+  carregarOswestry('aluno', a.n, a.id||null, 'oswestry_aluno_box');
 }
 
 // Helpers vencimento
@@ -4297,8 +4299,10 @@ function verPaciente(pOuIdx){
     '<button class="btn btne" onclick="abrirRegistrarSessao(\''+esc(p.n)+'\')"><i class="ti ti-plus"></i> Registrar sessão</button>'+
     '<button class="btn" onclick="verProntuario(\''+esc(p.n)+'\')"><i class="ti ti-clipboard-text"></i> Prontuário</button>'+
     '<button class="btn btnp" onclick="darAlta()"><i class="ti ti-user-check"></i> Dar alta</button>'+
-    '</div>'
+    '</div>'+
+    '<div id="oswestry_paciente_box" style="margin-top:18px"></div>'
   );
+  carregarOswestry('paciente', p.n, p.id||null, 'oswestry_paciente_box');
 }
 
 async function darAlta(){
@@ -7254,6 +7258,256 @@ function fs(n,cor,lb){return '<div class="fs"><div class="fn" style="color:'+cor
 function dr(lb,val){return '<div class="dr"><span class="dl">'+lb+'</span><span>'+val+'</span></div>';}
 function ncell(a){const id=a&&a.id?a.id:0;const n=a&&a.n?a.n:'?';return '<span style="display:flex;align-items:center"><span class="av '+avcls(id)+'">'+ini(n)+'</span>'+n+'</span>';}
 function esc(s){return (s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');}
+
+// ══════════════════════════════════════════════════════════
+// OSWESTRY — Questionário de Incapacidade (ODI)
+// ══════════════════════════════════════════════════════════
+
+const ODI_SECOES = [
+  { id:'s1_dor',         titulo:'01 Intensidade da dor', opcoes:[
+    'No momento, não sinto dor.',
+    'A dor que sinto agora é muito leve.',
+    'Atualmente, minha dor é moderada.',
+    'Neste momento, a dor está relativamente forte.',
+    'Minha dor agora é muito forte.',
+    'A dor que sinto agora é a mais intensa que consigo imaginar.'
+  ]},
+  { id:'s2_cuidados',    titulo:'02 Cuidados pessoais', opcoes:[
+    'Consigo tomar banho, me vestir e cuidar de mim sem aumentar a dor.',
+    'Faço meus cuidados pessoais sem ajuda, embora isso cause dor.',
+    'Consigo cuidar de mim, mas com dor e precisando fazer tudo devagar.',
+    'Preciso de alguma ajuda, porém realizo a maior parte dos meus cuidados.',
+    'Dependendo de ajuda diariamente para a maioria dos cuidados pessoais.',
+    'Não consigo me vestir adequadamente, tenho dificuldade para me lavar e permaneço na cama.'
+  ]},
+  { id:'s3_levantar',    titulo:'03 Levantar e carregar objetos', opcoes:[
+    'Levanto objetos pesados sem que a dor aumente.',
+    'Consigo levantar objetos pesados, mas isso piora a dor.',
+    'Não consigo erguer pesos do chão, mas consigo se estiverem apoiados em uma altura conveniente.',
+    'Não consigo levantar objetos pesados; consigo manusear pesos leves ou médios se bem posicionados.',
+    'Só consigo levantar objetos muito leves.',
+    'Não consigo levantar nem transportar objetos.'
+  ]},
+  { id:'s4_caminhar',    titulo:'04 Caminhar', opcoes:[
+    'Consigo caminhar a distância que desejar, sem limitação pela dor.',
+    'A dor me limita a caminhar no máximo cerca de 1,6 km.',
+    'A dor me limita a caminhar no máximo cerca de 400 m.',
+    'A dor me limita a caminhar no máximo cerca de 100 m.',
+    'Para caminhar, preciso usar bengala, muletas ou outro apoio.',
+    'Passo quase todo o tempo na cama e tenho muita dificuldade até para chegar ao banheiro.'
+  ]},
+  { id:'s5_sentar',      titulo:'05 Sentar', opcoes:[
+    'Posso ficar sentado em qualquer cadeira pelo tempo que desejar.',
+    'Consigo permanecer sentado pelo tempo que desejar, mas apenas numa cadeira confortável.',
+    'Por causa da dor, não consigo ficar sentado por mais de 1 hora.',
+    'A dor me impede de permanecer sentado por mais de 30 minutos.',
+    'A dor me impede de permanecer sentado por mais de 10 minutos.',
+    'A dor não me permite ficar sentado.'
+  ]},
+  { id:'s6_em_pe',       titulo:'06 Permanecer em pé', opcoes:[
+    'Posso ficar em pé pelo tempo que quiser, sem piorar a dor.',
+    'Consigo ficar em pé pelo tempo que quiser, mas a dor aumenta.',
+    'A dor me impede de permanecer em pé por mais de 1 hora.',
+    'A dor me impede de permanecer em pé por mais de 30 minutos.',
+    'A dor me impede de permanecer em pé por mais de 10 minutos.',
+    'A dor não me permite permanecer em pé.'
+  ]},
+  { id:'s7_dormir',      titulo:'07 Dormir', opcoes:[
+    'A dor não interfere no meu sono.',
+    'A dor atrapalha meu sono apenas ocasionalmente.',
+    'Por causa da dor, consigo dormir menos de 6 horas.',
+    'Por causa da dor, consigo dormir menos de 4 horas.',
+    'Por causa da dor, consigo dormir menos de 2 horas.',
+    'A dor me impede completamente de dormir.'
+  ]},
+  { id:'s8_vida_sexual', titulo:'08 Vida sexual (quando aplicável)', opcoes:[
+    'Minha vida sexual ocorre normalmente, sem aumento da dor.',
+    'Minha vida sexual continua normal, mas sinto mais dor.',
+    'Minha vida sexual é quase normal, porém causa bastante dor.',
+    'A dor limita muito minha vida sexual.',
+    'Por causa da dor, minha vida sexual é quase inexistente.',
+    'A dor me impede de ter vida sexual.'
+  ], opcional: true},
+  { id:'s9_vida_social', titulo:'09 Vida social', opcoes:[
+    'Participo normalmente de atividades sociais, sem aumentar a dor.',
+    'Minha vida social é normal, mas as atividades sociais pioram a dor.',
+    'Mantenho minha vida social, mas evito atividades mais exigentes, como esportes.',
+    'Tenho saído menos e participado de menos encontros por causa da dor.',
+    'Por causa da dor, minhas atividades sociais ficam restritas à minha casa.',
+    'A dor me impede de manter uma vida social.'
+  ]},
+  { id:'s10_viajar',     titulo:'10 Viagens e deslocamentos', opcoes:[
+    'Consigo fazer viagens ou deslocamentos sem sentir dor.',
+    'Consigo viajar para qualquer lugar, mas viajar aumenta minha dor.',
+    'Mesmo com dor forte, consigo fazer trajetos de mais de 2 horas.',
+    'A dor limita meus deslocamentos a trajetos inferiores a 1 hora.',
+    'Faço apenas deslocamentos essenciais e curtos, inferiores a 30 minutos.',
+    'A dor me impede de viajar, exceto para receber tratamento.'
+  ]}
+];
+
+function odiClassificacao(pct){
+  if(pct<=20) return {label:'Incapacidade mínima',   cor:'#2D7A3A', bg:'rgba(45,122,58,.1)'};
+  if(pct<=40) return {label:'Incapacidade moderada', cor:'#5C7A2E', bg:'rgba(92,122,46,.1)'};
+  if(pct<=60) return {label:'Incapacidade intensa',  cor:'#E67E22', bg:'rgba(230,126,34,.1)'};
+  if(pct<=80) return {label:'Incapacidade grave',    cor:'#C0392B', bg:'rgba(192,57,43,.1)'};
+  return              {label:'Restrição extrema',    cor:'#8B0000', bg:'rgba(139,0,0,.1)'};
+}
+
+function fmtDtBR(d){ if(!d) return '—'; const p=String(d).split('T')[0].split('-'); return p.length===3?p[2]+'/'+p[1]+'/'+p[0]:d; }
+function fmtDtCurta(d){ if(!d) return ''; const p=String(d).split('T')[0].split('-'); return p.length===3?p[2]+'/'+p[1]:d; }
+
+async function carregarOswestry(tipo, nome, pid, containerId){
+  const box = document.getElementById(containerId);
+  if(!box) return;
+  box.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:8px 0">Carregando Oswestry…</div>';
+  try {
+    const url = `${SB_URL}/rest/v1/oswestry?paciente_ref=eq.${encodeURIComponent(nome)}&paciente_tipo=eq.${tipo}&order=data_aplicacao.desc&limit=20`;
+    const r = await fetchWithTimeout(url,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}},8000);
+    const rows = await r.json().catch(()=>[]);
+    renderOswestry(box, tipo, nome, pid, rows);
+  } catch(e){ box.innerHTML='<div style="color:var(--text-3);font-size:12px;padding:8px">Erro ao carregar Oswestry.</div>'; }
+}
+
+function renderOswestry(box, tipo, nome, pid, rows){
+  const temHistorico = rows && rows.length > 0;
+  let html = '<div style="background:var(--white);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-top:4px">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">';
+  html += '<div style="font-size:12px;font-weight:700;color:var(--gold-dark);text-transform:uppercase;letter-spacing:.07em"><i class="ti ti-clipboard-check" style="margin-right:6px"></i>Oswestry — Índice de Incapacidade (ODI)</div>';
+  html += '<button class="btn btns" onclick="abrirFormOswestry(\''+esc(tipo)+'\',\''+esc(nome)+'\','+(pid||'null')+',\''+box.id+'\')"><i class="ti ti-plus"></i> Nova aplicação</button>';
+  html += '</div>';
+
+  if(!temHistorico){
+    html += '<div style="padding:24px;text-align:center;color:var(--text-3);font-size:13px"><i class="ti ti-clipboard-x" style="display:block;font-size:28px;opacity:.3;margin-bottom:6px"></i>Nenhuma aplicação registrada ainda.<br><span style="font-size:11px">Clique em "Nova aplicação" para começar.</span></div>';
+  } else {
+    html += '<div style="padding:14px 16px">';
+    // Gráfico se >1
+    if(rows.length>1){
+      html += '<div style="margin-bottom:14px">';
+      html += '<div style="font-size:11px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Evolução ODI (%)</div>';
+      html += '<div style="display:flex;align-items:flex-end;gap:6px;height:70px;border-bottom:1px solid var(--border);padding:0 2px">';
+      const maxPct = Math.max(...rows.map(r=>parseFloat(r.odi_percent)||0), 1);
+      [...rows].reverse().forEach(r=>{
+        const pct = parseFloat(r.odi_percent)||0;
+        const h = Math.max(4, Math.round((pct/maxPct)*54));
+        const cl = odiClassificacao(pct);
+        html += '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;min-width:0">';
+        html += '<div style="font-size:9px;font-weight:700;color:'+cl.cor+'">'+pct+'%</div>';
+        html += '<div style="width:100%;height:'+h+'px;background:'+cl.cor+';border-radius:3px 3px 0 0;opacity:.8"></div>';
+        html += '<div style="font-size:8px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;text-align:center">'+fmtDtCurta(r.data_aplicacao)+'</div>';
+        html += '</div>';
+      });
+      html += '</div></div>';
+    }
+    // Cards
+    rows.forEach((r,i)=>{
+      const cl = odiClassificacao(parseFloat(r.odi_percent)||0);
+      const isFirst = i===0;
+      html += '<div style="border:1px solid '+(isFirst?cl.cor:'var(--border)')+';border-left:'+(isFirst?'3px solid '+cl.cor:'1px solid var(--border)')+';border-radius:var(--r-md);padding:12px 14px;margin-bottom:8px">';
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
+      html += '<div><div style="font-size:13px;font-weight:700;color:var(--text-1)">'+(isFirst?'<i class="ti ti-star-filled" style="color:var(--gold);margin-right:4px;font-size:10px"></i>':'')+fmtDtBR(r.data_aplicacao)+(isFirst?' <span style="font-size:10px;color:var(--text-3)">(mais recente)</span>':'')+'</div>';
+      html += (r.criado_por?'<div style="font-size:11px;color:var(--text-3);margin-top:2px">por '+r.criado_por+'</div>':'');
+      html += '</div>';
+      html += '<div style="text-align:right"><div style="font-size:24px;font-weight:800;color:'+cl.cor+'">'+( parseFloat(r.odi_percent)||0)+'%</div>';
+      html += '<div style="font-size:10px;font-weight:600;color:'+cl.cor+';background:'+cl.bg+';border-radius:4px;padding:2px 7px;white-space:nowrap">'+cl.label+'</div></div>';
+      html += '</div>';
+      // Grid das 10 seções
+      html += '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px">';
+      ODI_SECOES.forEach(s=>{
+        const v = r[s.id];
+        const lbl = s.titulo.replace(/^\d+ /,'');
+        const corV = v==null?'var(--text-3)':v<=1?'#2D7A3A':v<=3?'#E67E22':'#C0392B';
+        html += '<div style="text-align:center;background:var(--bg);border-radius:4px;padding:5px 2px" title="'+lbl+': '+(v!=null?v:'n/a')+'">';
+        html += '<div style="font-size:8px;color:var(--text-3);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin-bottom:2px">'+lbl.substring(0,12)+'</div>';
+        html += '<div style="font-size:15px;font-weight:800;color:'+corV+'">'+(v!=null?v:'·')+'</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+      if(r.observacao) html += '<div style="font-size:12px;color:var(--text-2);font-style:italic;border-top:1px solid var(--border);padding-top:7px;margin-top:8px"><i class="ti ti-notes" style="margin-right:4px"></i>'+r.observacao+'</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+  box.innerHTML = html;
+}
+
+function abrirFormOswestry(tipo, nome, pid, containerId){
+  const hoje = new Date().toISOString().split('T')[0];
+  let html = '<div class="mdt"><i class="ti ti-clipboard-check" style="margin-right:8px;color:var(--gold)"></i>Oswestry — Nova aplicação</div>';
+  html += '<div style="font-size:12px;color:var(--text-2);margin-bottom:12px"><strong>'+nome+'</strong> · Marque <em>uma alternativa por seção</em></div>';
+  html += '<label class="fl">Data de aplicação</label><input class="fi" id="odi_data" type="date" value="'+hoje+'" style="margin-bottom:14px">';
+
+  ODI_SECOES.forEach(s=>{
+    html += '<div style="border:1px solid var(--border);border-radius:var(--r-md);padding:12px;margin-bottom:10px;background:var(--bg)">';
+    html += '<div style="font-size:12px;font-weight:700;color:var(--gold-dark);margin-bottom:8px">'+s.titulo+(s.opcional?' <span style="font-size:10px;font-weight:400;color:var(--text-3)">(opcional — marque "Não aplicável" se não se aplica)</span>':'')+'</div>';
+    s.opcoes.forEach((op,oi)=>{
+      html += '<label style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;cursor:pointer;font-size:12px;color:var(--text-1);border-bottom:'+(oi<s.opcoes.length-1?'1px solid rgba(0,0,0,.04)':'none')+'">';
+      html += '<input type="radio" name="odi_'+s.id+'" value="'+oi+'" style="margin-top:2px;accent-color:var(--gold);flex-shrink:0">';
+      html += '<span><strong style="color:var(--text-3);margin-right:4px">'+oi+'</strong>'+op+'</span>';
+      html += '</label>';
+    });
+    if(s.opcional){
+      html += '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;font-size:11px;color:var(--text-3);font-style:italic">';
+      html += '<input type="radio" name="odi_'+s.id+'" value="na" checked style="accent-color:var(--gold)"> Não aplicável (não entra no cálculo)';
+      html += '</label>';
+    }
+    html += '</div>';
+  });
+
+  html += '<label class="fl">Observação clínica (opcional)</label>';
+  html += '<textarea class="fi" id="odi_obs" rows="2" placeholder="Ex: Paciente refere melhora no sono…" style="resize:vertical;margin-bottom:14px"></textarea>';
+  html += '<div class="mdf"><button class="btn" onclick="fecharModal()">Cancelar</button>';
+  html += '<button class="btn btnp" id="odi_btn" onclick="salvarOswestry(\''+esc(tipo)+'\',\''+esc(nome)+'\','+(pid||'null')+',\''+esc(containerId)+'\')"><i class="ti ti-check"></i> Salvar resultado</button></div>';
+  abrirModal(html);
+}
+
+async function salvarOswestry(tipo, nome, pid, containerId){
+  const btn = document.getElementById('odi_btn');
+  if(btn){ btn.disabled=true; btn.textContent='Salvando…'; }
+  const data = document.getElementById('odi_data')?.value;
+  if(!data){ alert('Informe a data.'); if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-check"></i> Salvar resultado';} return; }
+
+  const campos = {}; let somaP=0, numSec=0, faltaObrig=false;
+  for(const s of ODI_SECOES){
+    const sel = document.querySelector(`input[name="odi_${s.id}"]:checked`);
+    if(!sel){
+      if(!s.opcional){ faltaObrig=true; break; }
+      campos[s.id]=null;
+    } else if(sel.value==='na'){
+      campos[s.id]=null;
+    } else {
+      const v=parseInt(sel.value);
+      campos[s.id]=v; somaP+=v; numSec++;
+    }
+  }
+
+  if(faltaObrig){ alert('Preencha todas as seções obrigatórias antes de salvar.'); if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-check"></i> Salvar resultado';} return; }
+  if(numSec===0){ alert('Marque pelo menos uma seção.'); if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-check"></i> Salvar resultado';} return; }
+
+  const odiPct = Math.round((somaP/(numSec*5))*1000)/10;
+  const cl = odiClassificacao(odiPct);
+
+  const payload = {
+    paciente_ref: nome, paciente_tipo: tipo,
+    ...(pid&&pid!='null'?{paciente_id:parseInt(pid)}:{}),
+    data_aplicacao: data,
+    observacao: document.getElementById('odi_obs')?.value||null,
+    odi_percent: odiPct, classificacao: cl.label,
+    criado_por: usuarioAtual?.nome||null,
+    ...campos
+  };
+
+  try {
+    await sbInsert('oswestry', payload);
+    await registrarLog('oswestry aplicado','oswestry', nome+' — ODI '+odiPct+'% ('+cl.label+') em '+data);
+    fecharModal();
+    carregarOswestry(tipo, nome, pid, containerId);
+  } catch(e){
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="ti ti-check"></i> Salvar resultado';}
+    alert('Erro ao salvar: '+e.message);
+  }
+}
 
 </script>
 
