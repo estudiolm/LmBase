@@ -1382,6 +1382,8 @@ function checarPermissao(pagina){
 function nav(p){
   pg=p; ft=''; filM='';
   if(!checarPermissao(p)){ semPermissao(); return; }
+  // Tema escuro só no módulo Fisio Esportiva
+  if(!['f_esportiva','fe_pront','fe_avalia','fe_atleta','fe_forca','fe_carga','fe_evolucao'].includes(p)) feDesativarTemaEscuro();
   document.querySelectorAll('.ni').forEach(n=>n.classList.remove('act'));
   const niAtivo = document.getElementById('ni_'+p);
   if(niAtivo) niAtivo.classList.add('act');
@@ -7674,8 +7676,58 @@ function feSegundaAtual(){
   return s.toISOString().split('T')[0];
 }
 
+/* ---- TEMA ESCURO GLOBAL quando no módulo Fisio Esportiva ---- */
+const FE_DARK_STYLE = `<style id="fe-dark-global">
+body{background:#0a0a0a!important;color:#e8e8e8!important}
+.sidebar,.sb{background:#0d0d0d!important;border-right:1px solid #1f1f1f!important}
+.ni{color:#aaa!important}.ni:hover,.ni.active{background:#1a1a1a!important;color:#fff!important}
+.nsep{color:#444!important}
+#mn{background:#0a0a0a!important}
+.brand{color:#fff!important}
+</style>`;
+
+function feAtivarTemaEscuro(){
+  if(!document.getElementById('fe-dark-global')) document.head.insertAdjacentHTML('beforeend',FE_DARK_STYLE);
+}
+function feDesativarTemaEscuro(){
+  const s=document.getElementById('fe-dark-global');
+  if(s) s.remove();
+}
+
+/* ---- ABAS DASHBOARD ---- */
+let _feAbaAtiva = 'prontuarios';
+
+function feRenderAbas(aba){
+  _feAbaAtiva = aba;
+  const abas = [
+    {id:'prontuarios', icon:'ti-clipboard-list', label:'Prontuários'},
+    {id:'alunos_pilates', icon:'ti-yoga', label:'Alunos Pilates'},
+    {id:'pacientes_fisio', icon:'ti-stethoscope', label:'Pacientes Fisio'},
+  ];
+  return `<div class="fe-tabs" style="margin-bottom:0;padding:0 24px;background:#0d0d0d">
+    ${abas.map(a=>`<button class="fe-tab ${aba===a.id?'act':''}" onclick="feAbrirAba('${a.id}')">
+      <i class="ti ${a.icon}" style="margin-right:5px"></i>${a.label}
+    </button>`).join('')}
+  </div>`;
+}
+
+async function feAbrirAba(aba){
+  _feAbaAtiva = aba;
+  // atualiza tabs
+  document.querySelectorAll('.fe-tab').forEach(t=>{
+    t.classList.toggle('act', t.onclick?.toString().includes(`'${aba}'`));
+  });
+  const cont = document.getElementById('fe-aba-conteudo');
+  if(!cont) return;
+  cont.innerHTML = '<div style="color:#888;padding:30px;text-align:center"><i class="ti ti-loader"></i> Carregando...</div>';
+  if(aba==='prontuarios') await feCarregarDashboard();
+  else if(aba==='alunos_pilates') await feRenderAlunosPilates();
+  else if(aba==='pacientes_fisio') await feRenderPacientesFisio();
+}
+
 /* ---- DASHBOARD ---- */
 async function navFEsportiva(){
+  feAtivarTemaEscuro();
   set(FE_CSS+`<div class="fe-wrap">
     <div class="fe-header">
       <div>
@@ -7686,6 +7738,7 @@ async function navFEsportiva(){
         <button class="fe-btn fe-btn-primary" onclick="abrirModalNovoProntuario()"><i class="ti ti-plus"></i> Novo Prontuário</button>
       </div>
     </div>
+    ${feRenderAbas('prontuarios')}
     <div style="padding:20px 24px">
       <div class="fe-row" style="margin-bottom:20px">
         <div class="fe-card" style="flex:1;min-width:140px">
@@ -7709,11 +7762,13 @@ async function navFEsportiva(){
           <div style="font-size:.8rem;color:#888">sessões de treino</div>
         </div>
       </div>
-      <div class="fe-section-title"><i class="ti ti-users"></i> Prontuários</div>
-      <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap">
-        <input class="fe-input" id="fe-busca" placeholder="Buscar por nome..." style="max-width:300px" oninput="feBuscar(this.value)">
+      <div id="fe-aba-conteudo">
+        <div class="fe-section-title"><i class="ti ti-users"></i> Prontuários</div>
+        <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <input class="fe-input" id="fe-busca" placeholder="Buscar por nome..." style="max-width:300px" oninput="feBuscar(this.value)">
+        </div>
+        <div id="fe-lista-prontuarios"><div style="color:#888;padding:20px;text-align:center"><i class="ti ti-loader"></i> Carregando...</div></div>
       </div>
-      <div id="fe-lista-prontuarios"><div style="color:#888;padding:20px;text-align:center"><i class="ti ti-loader"></i> Carregando...</div></div>
     </div>
   </div>
   <div id="fe-modal-container"></div>`);
@@ -7721,6 +7776,20 @@ async function navFEsportiva(){
 }
 
 async function feCarregarDashboard(){
+  // garante estrutura da aba prontuários no container
+  const cont = document.getElementById('fe-aba-conteudo');
+  if(cont && !document.getElementById('fe-lista-prontuarios')){
+    cont.innerHTML = `
+      <div class="fe-section-title"><i class="ti ti-users"></i> Prontuários</div>
+      <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <input class="fe-input" id="fe-busca" placeholder="Buscar por nome..." style="max-width:300px" oninput="feBuscar(this.value)">
+      </div>
+      <div id="fe-lista-prontuarios"><div style="color:#888;padding:20px;text-align:center"><i class="ti ti-loader"></i> Carregando...</div></div>`;
+  }
+  // atualiza tabs
+  document.querySelectorAll('.fe-tab').forEach(t=>{
+    t.classList.toggle('act', t.onclick?.toString().includes("'prontuarios'"));
+  });
   try{
     const[pronts,epis,atletas,sessoes]=await Promise.all([
       feApi('fisio_prontuarios',{select:'id,nome_display,ref_tipo,ref_id,created_at'}),
@@ -7728,13 +7797,14 @@ async function feCarregarDashboard(){
       feApi('fisio_atleta',{select:'id'}),
       feApi('fisio_treino_sessoes',{filters:[`data_sessao=gte.${feSegundaAtual()}`],select:'id'})
     ]);
-    document.getElementById('fe-stat-total').textContent=pronts.length;
-    document.getElementById('fe-stat-abertos').textContent=epis.length;
-    document.getElementById('fe-stat-atletas').textContent=atletas.length;
-    document.getElementById('fe-stat-semana').textContent=sessoes.length;
+    if(document.getElementById('fe-stat-total')) document.getElementById('fe-stat-total').textContent=pronts.length;
+    if(document.getElementById('fe-stat-abertos')) document.getElementById('fe-stat-abertos').textContent=epis.length;
+    if(document.getElementById('fe-stat-atletas')) document.getElementById('fe-stat-atletas').textContent=atletas.length;
+    if(document.getElementById('fe-stat-semana')) document.getElementById('fe-stat-semana').textContent=sessoes.length;
     feRenderLista(pronts,new Set(epis.map(e=>e.prontuario_id)));
   }catch(e){
-    document.getElementById('fe-lista-prontuarios').innerHTML=`<div style="color:#f87171;padding:20px">Erro: ${esc(e.message)}</div>`;
+    const el=document.getElementById('fe-lista-prontuarios');
+    if(el) el.innerHTML=`<div style="color:#f87171;padding:20px">Erro: ${esc(e.message)}</div>`;
   }
 }
 
@@ -7753,6 +7823,84 @@ function feRenderLista(pronts,episAbertos){
       ${episAbertos&&episAbertos.has?.(p.id)?'<span class="fe-badge fe-badge-green">Aberto</span>':'<span class="fe-badge fe-badge-gray">Sem episódio</span>'}
       <i class="ti ti-chevron-right" style="color:#444"></i>
     </div>`).join('');
+}
+
+/* ---- ABA: ALUNOS PILATES ---- */
+async function feRenderAlunosPilates(){
+  const cont = document.getElementById('fe-aba-conteudo');
+  if(!cont) return;
+  try{
+    const alunos = await feApi('alunos',{select:'id,nome,status,plano,horario,valor,ultimo_pagto,prox_vencto',order:'nome.asc',limit:500});
+    const ativos = alunos.filter(a=>a.status==='A');
+    const inat   = alunos.filter(a=>a.status!=='A');
+    const badge = s => s==='A'
+      ? '<span class="fe-badge fe-badge-green">Ativo</span>'
+      : '<span class="fe-badge fe-badge-gray">Inativo</span>';
+    const renderLista = (lista) => lista.length===0
+      ? '<div style="color:#666;padding:16px;text-align:center">Nenhum cadastro.</div>'
+      : lista.map(a=>`
+        <div class="fe-prontuario-item">
+          <div class="fe-pront-avatar" style="background:#1a2a1a;color:#34d399">${feIniciais(a.nome)}</div>
+          <div class="fe-pront-info">
+            <div class="fe-pront-name">${esc(a.nome)}</div>
+            <div class="fe-pront-sub">${esc(a.plano||'—')} · ${esc(a.horario||'—')}</div>
+          </div>
+          <div style="text-align:right;min-width:90px">
+            <div style="font-size:.85rem;color:#34d399;font-weight:700">R$ ${parseFloat(a.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:0})}</div>
+            <div style="font-size:.72rem;color:#666">venc: ${a.prox_vencto||'—'}</div>
+          </div>
+          ${badge(a.status)}
+        </div>`).join('');
+    cont.innerHTML = `
+      <div class="fe-section-title"><i class="ti ti-yoga"></i> Alunos de Pilates (${ativos.length} ativos · ${inat.length} inativos)</div>
+      <details open style="margin-bottom:16px">
+        <summary style="cursor:pointer;color:#34d399;font-weight:600;font-size:.9rem;margin-bottom:8px">Ativos (${ativos.length})</summary>
+        ${renderLista(ativos)}
+      </details>
+      <details style="margin-bottom:16px">
+        <summary style="cursor:pointer;color:#666;font-weight:600;font-size:.9rem;margin-bottom:8px">Inativos (${inat.length})</summary>
+        ${renderLista(inat)}
+      </details>`;
+  }catch(e){
+    cont.innerHTML=`<div style="color:#f87171;padding:20px">Erro ao carregar alunos: ${esc(e.message)}</div>`;
+  }
+}
+
+/* ---- ABA: PACIENTES FISIO ---- */
+async function feRenderPacientesFisio(){
+  const cont = document.getElementById('fe-aba-conteudo');
+  if(!cont) return;
+  try{
+    const pacs = await feApi('pacientes_fisio',{select:'id,nome,status,convenio,telefone,data_nascimento',order:'nome.asc',limit:500});
+    const ativos = pacs.filter(p=>p.status==='A'||!p.status);
+    const inat   = pacs.filter(p=>p.status&&p.status!=='A');
+    const badgeConv = c => c
+      ? `<span class="fe-badge fe-badge-blue">${esc(c)}</span>`
+      : '<span class="fe-badge fe-badge-gray">Particular</span>';
+    const renderLista = (lista) => lista.length===0
+      ? '<div style="color:#666;padding:16px;text-align:center">Nenhum cadastro.</div>'
+      : lista.map(p=>`
+        <div class="fe-prontuario-item">
+          <div class="fe-pront-avatar" style="background:#1a1a2e;color:#818cf8">${feIniciais(p.nome)}</div>
+          <div class="fe-pront-info">
+            <div class="fe-pront-name">${esc(p.nome)}</div>
+            <div class="fe-pront-sub">${p.telefone?esc(p.telefone)+'  ·  ':''}${p.data_nascimento?feDataBr(p.data_nascimento):'sem data nasc.'}</div>
+          </div>
+          ${badgeConv(p.convenio)}
+        </div>`).join('');
+    cont.innerHTML = `
+      <div class="fe-section-title"><i class="ti ti-stethoscope"></i> Pacientes Fisioterapia (${ativos.length} ativos)</div>
+      <details open style="margin-bottom:16px">
+        <summary style="cursor:pointer;color:#818cf8;font-weight:600;font-size:.9rem;margin-bottom:8px">Ativos (${ativos.length})</summary>
+        ${renderLista(ativos)}
+      </details>
+      ${inat.length>0?`<details style="margin-bottom:16px">
+        <summary style="cursor:pointer;color:#666;font-weight:600;font-size:.9rem;margin-bottom:8px">Inativos (${inat.length})</summary>
+        ${renderLista(inat)}
+      </details>`:''}`;
+  }catch(e){
+    cont.innerHTML=`<div style="color:#f87171;padding:20px">Erro ao carregar pacientes: ${esc(e.message)}</div>`;
+  }
 }
 
 function feBuscar(q){
