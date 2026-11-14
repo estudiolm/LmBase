@@ -6312,10 +6312,18 @@ async function navDRE(){
     safe(fetchWithTimeout(`${SB_URL}/rest/v1/despesas?select=*&order=ano.desc,mes.desc&limit=500`,{headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}},8000)),
   ]);
 
-  const pags    = rPags    ? await rPags.json().catch(()=>[])    : [];
-  const vendas  = rVendas  ? await rVendas.json().catch(()=>[])  : [];
-  const sessoes = rSessoes ? await rSessoes.json().catch(()=>[]) : [];
-  const despExtra = rDesp  ? await rDesp.json().catch(()=>[])   : [];
+  const parseArr = async (r,nome) => {
+    if(!r) { console.warn('[DRE] '+nome+': resposta nula (timeout ou erro de rede)'); return []; }
+    if(!r.ok) { const t=await r.text().catch(()=>''); console.warn('[DRE] '+nome+': HTTP '+r.status, t.slice(0,200)); return []; }
+    const d=await r.json().catch(e=>{ console.warn('[DRE] '+nome+': json parse error',e); return []; });
+    if(!Array.isArray(d)) { console.warn('[DRE] '+nome+': resposta não é array', JSON.stringify(d).slice(0,200)); return []; }
+    console.log('[DRE] '+nome+': '+d.length+' registros');
+    return d;
+  };
+  const pags    = await parseArr(rPags,'pagamentos');
+  const vendas  = await parseArr(rVendas,'vendas');
+  const sessoes = await parseArr(rSessoes,'sessoes_fisio');
+  const despExtra = await parseArr(rDesp,'despesas');
 
   // ── Agrupa receitas por mês ────────────────────────────────
   function getMesAno(s){
@@ -8371,7 +8379,7 @@ function feCalcRM(){
 
 async function feSalvarRM(rmCalc,cg,rp,tipo,ex){
   try{
-    await feApi('fisio_rm_historico',{method:'POST',body:{episodio_id:feState.episodioId,prontuario_id:feState.prontuarioId,exercicio:ex,carga_kg:cg,repeticoes:rp,rm_calculado:rmCalc,tipo_rm:tipo,data_medicao:feHoje()}});
+    await feApi('fisio_rm_historico',{method:'POST',body:{episodio_id:feState.episodioId,prontuario_id:feState.prontuarioId,exercicio:ex,carga_kg:cg,repeticoes:rp,rm_calculado:rmCalc,tipo_rm:tipo,data_registro:feHoje()}});
     alert('1RM salvo!');await feRenderForca();
   }catch(e){alert('Erro: '+e.message);}
 }
@@ -8418,7 +8426,7 @@ async function feSalvarSessao(){
   try{
     const dur=parseInt(document.getElementById('ses-dur')?.value),pse=parseInt(document.getElementById('ses-pse')?.value);
     if(!dur||!pse){alert('Duração e PSE são obrigatórios.');return;}
-    await feApi('fisio_treino_sessoes',{method:'POST',body:{episodio_id:feState.episodioId,prontuario_id:feState.prontuarioId,data_sessao:document.getElementById('ses-dt')?.value||feHoje(),tipo_sessao:document.getElementById('ses-tp')?.value||'Musculação',duracao_minutos:dur,pse_sessao:pse,dor_sessao:parseFloat(document.getElementById('ses-dor')?.value)||null,resposta_dia_seguinte:document.getElementById('ses-d1')?.value||null,descricao:document.getElementById('ses-ex')?.value||null}});
+    await feApi('fisio_treino_sessoes',{method:'POST',body:{episodio_id:feState.episodioId,prontuario_id:feState.prontuarioId,data_sessao:document.getElementById('ses-dt')?.value||feHoje(),tipo:document.getElementById('ses-tp')?.value||'Musculação',duracao_minutos:dur,pse_sessao:pse,dor_sessao:parseFloat(document.getElementById('ses-dor')?.value)||null,resposta_dia_seguinte:document.getElementById('ses-d1')?.value||null,descricao:document.getElementById('ses-ex')?.value||null}});
     document.getElementById('fe-modal-container').innerHTML='';
     await feRenderForca();
   }catch(e){alert('Erro: '+e.message);}
@@ -8637,11 +8645,11 @@ async function feCriarPront(){
     if(t==='externo'){
       const nm=document.getElementById('np-nm')?.value?.trim();
       if(!nm){alert('Nome obrigatório.');btn.disabled=false;btn.innerHTML='<i class="ti ti-user-plus"></i> Criar';return;}
-      p.nome_display=nm;p.ext_data_nascimento=document.getElementById('np-dn')?.value||null;p.ext_profissao=document.getElementById('np-pf')?.value||null;p.ext_telefone=document.getElementById('np-tel')?.value||null;p.ext_email=document.getElementById('np-em')?.value||null;p.ext_dominancia=document.getElementById('np-dom')?.value||null;p.observacoes=document.getElementById('np-obs')?.value||null;
+      p.ext_nome=nm;p.ext_data_nascimento=document.getElementById('np-dn')?.value||null;p.ext_profissao=document.getElementById('np-pf')?.value||null;p.ext_telefone=document.getElementById('np-tel')?.value||null;p.ext_email=document.getElementById('np-em')?.value||null;p.ext_dominancia=document.getElementById('np-dom')?.value||null;p.observacoes=document.getElementById('np-obs')?.value||null;
     }else{
       const rid=document.getElementById('np-ref-id')?.value;
       if(!rid){alert('Selecione um '+(t==='aluno'?'aluno':'paciente')+'.');btn.disabled=false;btn.innerHTML='<i class="ti ti-user-plus"></i> Criar';return;}
-      p.ref_id=rid;const lst=t==='aluno'?window._feAlunos:window._fePacientes;const ref=lst?.find(x=>x.id==rid);p.nome_display=ref?.nome||'Sem nome';
+      p.ref_id=parseInt(rid);const lst=t==='aluno'?window._feAlunos:window._fePacientes;const ref=lst?.find(x=>x.id==rid);
     }
     const r=await feApi('fisio_prontuarios',{method:'POST',body:p});
     document.getElementById('fe-modal-container').innerHTML='';
@@ -8674,7 +8682,7 @@ async function feCriarEpisodio(prontuarioId){
   try{
     const tt=document.getElementById('ep-tt')?.value?.trim();
     if(!tt){alert('Título obrigatório.');btn.disabled=false;btn.innerHTML='<i class="ti ti-check"></i> Criar';return;}
-    const r=await feApi('fisio_episodios',{method:'POST',body:{prontuario_id:prontuarioId,titulo:tt,data_abertura:document.getElementById('ep-dt')?.value||feHoje(),status:'aberto',queixa_inicial:document.getElementById('ep-qi')?.value||null}});
+    const r=await feApi('fisio_episodios',{method:'POST',body:{prontuario_id:prontuarioId,titulo:tt,data_inicio:document.getElementById('ep-dt')?.value||feHoje(),status:'aberto',queixa_inicial:document.getElementById('ep-qi')?.value||null}});
     document.getElementById('fe-modal-container').innerHTML='';
     if(r&&r[0]?.id) await feAbrirEpisodio(r[0].id,prontuarioId);
     else await feAbrirPront(prontuarioId);
@@ -8684,7 +8692,7 @@ async function feCriarEpisodio(prontuarioId){
 async function feFecharEpisodio(id,prontuarioId){
   if(!confirm('Fechar este episódio?')) return;
   try{
-    await feApi('fisio_episodios',{method:'PATCH',body:{status:'fechado',data_fechamento:feHoje()},filters:[`id=eq.${id}`]});
+    await feApi('fisio_episodios',{method:'PATCH',body:{status:'fechado',data_fim:feHoje()},filters:[`id=eq.${id}`]});
     await feAbrirPront(prontuarioId||feState.prontuarioId);
   }catch(e){alert('Erro: '+e.message);}
 }
