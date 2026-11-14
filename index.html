@@ -940,6 +940,7 @@ select.fi {
     <!-- Fisioterapia -->
     <div class="nsep">Fisioterapia</div>
     <button class="ni fisio" id="ni_f_pacientes"  onclick="nav('f_pacientes')"><i class="ti ti-clipboard-list"></i>Pacientes</button>
+    <button class="ni fisio" id="ni_f_esportiva"  onclick="nav('f_esportiva')"><i class="ti ti-run"></i>Fisio Esportiva</button>
 
     <!-- Loja -->
     <div class="nsep">Loja</div>
@@ -1355,6 +1356,9 @@ function aplicarPermissoes(){
     // Recepção — ponto fica no TOPO, esconde o do rodapé
     if(pontoTop) pontoTop.style.display = '';
     if(pontoRel) pontoRel.style.display = 'none';
+    // Recepção não acessa módulo clínico de fisioterapia esportiva
+    const btnFisioEsp = document.getElementById('ni_f_esportiva');
+    if(btnFisioEsp) btnFisioEsp.style.display = 'none';
   }
 }
 
@@ -1367,8 +1371,11 @@ function checarPermissao(pagina){
   if(pagina==='dre'       && !perm.verFinGeral) return false;
   if(pagina==='logs'      && !perm.verFinGeral) return false;
   if(pagina==='ponto'     && !perm.verPonto) return false;
-  // Fisio só pode ver início, alunos de pilates e pacientes de fisio
-  if(isFisio && !['home','p_alunos','f_pacientes'].includes(pagina)) return false;
+  // Fisio só pode ver início, alunos de pilates, pacientes de fisio e módulo esportivo
+  if(isFisio && !['home','p_alunos','f_pacientes','f_esportiva','fe_pront','fe_avalia','fe_atleta','fe_forca','fe_carga','fe_evolucao'].includes(pagina)) return false;
+  // Recepção não acessa módulo clínico de fisioterapia esportiva
+  const isRecepcao = usuarioAtual.perfil === 'recepcao';
+  if(isRecepcao && ['f_esportiva','fe_pront','fe_avalia','fe_atleta','fe_forca','fe_carga','fe_evolucao'].includes(pagina)) return false;
   return true;
 }
 
@@ -1386,6 +1393,8 @@ function nav(p){
     home:rHome,
     p_dash:navPDash, p_alunos:navPAlunos, p_agenda:rPAgenda, p_fin:navPFin,
     f_dash:navFDash, f_pacientes:navFPacientes,
+    f_esportiva:navFEsportiva, fe_pront:navFEPront, fe_avalia:navFEAvalia,
+    fe_atleta:navFEAtleta, fe_forca:navFEForca, fe_carga:navFECarga, fe_evolucao:navFEEvolucao,
     l_dash:navLDash, l_vendas:navLVendas, l_estoque:navLEstoque,
     l_encomendas:navLEncomendas, l_clientes:navLClientes, l_entrada:navLEntrada,
     fin_geral:rFinGeral, logs:rLogs, gcal:rGcal,
@@ -7509,6 +7518,1178 @@ async function salvarOswestry(tipo, nome, pid, containerId){
   }
 }
 
+/* ============================================================
+   MÓDULO FISIOTERAPIA ESPORTIVA — LM Estúdio
+   ============================================================ */
+
+const FE_SB = 'https://wfzstlltekwjrlwlbwqg.supabase.co';
+const FE_KEY = SB_KEY;
+
+let feState = {
+  prontuarioId: null,
+  episodioId: null,
+  avaliacaoId: null,
+  atletaId: null,
+  currentTab: 'ortopedica'
+};
+
+const FE_CSS = `
+<style id="fe-styles">
+.fe-wrap{background:#0a0a0a;color:#e8e8e8;min-height:100vh;font-family:inherit;padding:0}
+.fe-header{background:#111;border-bottom:1px solid #2a2a2a;padding:16px 24px;display:flex;align-items:center;gap:12px}
+.fe-title{font-size:1.3rem;font-weight:700;color:#fff;margin:0}
+.fe-subtitle{font-size:.85rem;color:#888;margin:0}
+.fe-card{background:#111;border:1px solid #2a2a2a;border-radius:12px;padding:20px;margin-bottom:16px}
+.fe-card-title{font-size:.9rem;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px}
+.fe-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:.9rem;font-weight:600;transition:all .15s}
+.fe-btn-primary{background:#2563eb;color:#fff}.fe-btn-primary:hover{background:#1d4ed8}
+.fe-btn-green{background:#059669;color:#fff}.fe-btn-green:hover{background:#047857}
+.fe-btn-red{background:#dc2626;color:#fff}.fe-btn-red:hover{background:#b91c1c}
+.fe-btn-ghost{background:transparent;color:#aaa;border:1px solid #333}.fe-btn-ghost:hover{background:#1a1a1a;color:#fff}
+.fe-btn-sm{padding:5px 10px;font-size:.8rem}
+.fe-input{background:#1a1a1a;border:1px solid #333;color:#e8e8e8;border-radius:8px;padding:8px 12px;font-size:.9rem;width:100%;box-sizing:border-box}
+.fe-input:focus{outline:none;border-color:#2563eb}
+.fe-select{background:#1a1a1a;border:1px solid #333;color:#e8e8e8;border-radius:8px;padding:8px 12px;font-size:.9rem;width:100%;box-sizing:border-box}
+.fe-label{font-size:.8rem;color:#888;margin-bottom:4px;display:block}
+.fe-row{display:flex;gap:12px;flex-wrap:wrap}
+.fe-col{flex:1;min-width:160px}
+.fe-tabs{display:flex;gap:4px;border-bottom:1px solid #2a2a2a;margin-bottom:20px;flex-wrap:wrap}
+.fe-tab{padding:8px 16px;border-radius:8px 8px 0 0;border:none;background:transparent;color:#666;font-size:.85rem;cursor:pointer;transition:all .15s;border-bottom:2px solid transparent}
+.fe-tab.act{color:#2563eb;border-bottom-color:#2563eb;background:#111}.fe-tab:hover{color:#aaa}
+.fe-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:.75rem;font-weight:700}
+.fe-badge-green{background:#064e3b;color:#34d399}.fe-badge-blue{background:#1e3a5f;color:#60a5fa}
+.fe-badge-red{background:#7f1d1d;color:#f87171}.fe-badge-yellow{background:#78350f;color:#fbbf24}
+.fe-badge-gray{background:#1f2937;color:#9ca3af}
+.fe-grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fe-grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+@media(max-width:600px){.fe-grid2,.fe-grid3{grid-template-columns:1fr}.fe-row{flex-direction:column}}
+.fe-prontuario-item{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:10px;background:#111;border:1px solid #2a2a2a;cursor:pointer;transition:all .15s;margin-bottom:8px}
+.fe-prontuario-item:hover{background:#1a1a1a;border-color:#444}
+.fe-pront-avatar{width:40px;height:40px;border-radius:50%;background:#1e3a5f;display:flex;align-items:center;justify-content:center;font-weight:700;color:#60a5fa;font-size:1rem;flex-shrink:0}
+.fe-pront-info{flex:1}
+.fe-pront-name{font-weight:600;color:#e8e8e8;font-size:.95rem}
+.fe-pront-sub{font-size:.78rem;color:#666;margin-top:2px}
+.fe-section-title{font-size:1rem;font-weight:700;color:#e8e8e8;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.fe-textarea{background:#1a1a1a;border:1px solid #333;color:#e8e8e8;border-radius:8px;padding:10px 12px;font-size:.9rem;width:100%;box-sizing:border-box;resize:vertical;min-height:80px}
+.fe-textarea:focus{outline:none;border-color:#2563eb}
+.fe-rm-result{background:#0d1b2a;border:1px solid #1e3a5f;border-radius:10px;padding:16px;text-align:center}
+.fe-rm-value{font-size:2rem;font-weight:800;color:#60a5fa}
+.fe-rm-label{font-size:.8rem;color:#888;margin-top:4px}
+.fe-chart-bar{background:#1a1a1a;border-radius:4px;height:8px;overflow:hidden;margin-top:4px}
+.fe-chart-fill{height:100%;border-radius:4px;transition:width .3s}
+.fe-carga-semana{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:12px}
+.fe-carga-dia{background:#1a1a1a;border-radius:6px;padding:6px 4px;text-align:center;font-size:.7rem}
+.fe-carga-dia .dia-nome{color:#666;font-size:.65rem}
+.fe-carga-dia .dia-ua{color:#60a5fa;font-weight:700;font-size:.85rem;margin-top:2px}
+.fe-timeline{position:relative;padding-left:28px}
+.fe-timeline::before{content:'';position:absolute;left:9px;top:0;bottom:0;width:2px;background:#2a2a2a}
+.fe-tl-item{position:relative;padding-bottom:20px}
+.fe-tl-dot{position:absolute;left:-23px;top:4px;width:10px;height:10px;border-radius:50%;background:#2563eb;border:2px solid #0a0a0a}
+.fe-tl-dot.green{background:#059669}.fe-tl-dot.red{background:#dc2626}
+.fe-tl-date{font-size:.72rem;color:#666}
+.fe-tl-title{font-size:.9rem;color:#e8e8e8;font-weight:600}
+.fe-tl-sub{font-size:.8rem;color:#888}
+.fe-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
+.fe-modal{background:#111;border:1px solid #2a2a2a;border-radius:16px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;padding:24px}
+.fe-modal-title{font-size:1.1rem;font-weight:700;color:#fff;margin-bottom:16px}
+.fe-rts-step{background:#111;border:1px solid #2a2a2a;border-radius:12px;padding:16px;margin-bottom:12px}
+.fe-rts-step.done{border-color:#059669}.fe-rts-step.active{border-color:#2563eb}
+.fe-rts-step-num{width:28px;height:28px;border-radius:50%;background:#1a1a1a;border:2px solid #333;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;color:#888}
+.fe-rts-step-num.done{background:#064e3b;border-color:#059669;color:#34d399}
+.fe-rts-step-num.active{background:#1e3a5f;border-color:#2563eb;color:#60a5fa}
+.fe-topbar{display:flex;align-items:center;gap:8px;padding:12px 24px;background:#0a0a0a;border-bottom:1px solid #1a1a1a;flex-wrap:wrap}
+.fe-breadcrumb{font-size:.85rem;color:#888;cursor:pointer}.fe-breadcrumb:hover{color:#fff}
+.fe-breadcrumb-sep{color:#333}
+</style>
+`;
+
+async function feApi(table,opts={}){
+  const{method='GET',body,select,filters=[],order,limit}=opts;
+  let url=`${FE_SB}/rest/v1/${table}`;
+  const params=[];
+  if(select) params.push(`select=${encodeURIComponent(select)}`);
+  filters.forEach(f=>params.push(f));
+  if(order) params.push(`order=${order}`);
+  if(limit) params.push(`limit=${limit}`);
+  if(params.length) url+='?'+params.join('&');
+  const h={'Content-Type':'application/json','apikey':FE_KEY,'Authorization':'Bearer '+FE_KEY};
+  if(method==='POST') h['Prefer']='return=representation';
+  if(method==='PATCH') h['Prefer']='return=representation';
+  const r=await fetch(url,{method,headers:h,body:body?JSON.stringify(body):undefined});
+  if(!r.ok){const t=await r.text();throw new Error(t);}
+  if(r.status===204) return null;
+  return r.json();
+}
+
+function feIniciais(nome){
+  if(!nome) return '?';
+  const p=nome.trim().split(' ');
+  return p.length===1?p[0].substring(0,2).toUpperCase():(p[0][0]+p[p.length-1][0]).toUpperCase();
+}
+
+function feDataBr(iso){
+  if(!iso) return '—';
+  const d=iso.split('T')[0].split('-');
+  return `${d[2]}/${d[1]}/${d[0]}`;
+}
+
+function feHoje(){return new Date().toISOString().split('T')[0];}
+
+function feNivelBadge(n){
+  const m={Recreativo:'<span class="fe-badge fe-badge-yellow">Recreativo</span>',Amador:'<span class="fe-badge fe-badge-blue">Amador</span>',Profissional:'<span class="fe-badge fe-badge-red">Profissional</span>'};
+  return m[n]||'<span class="fe-badge fe-badge-gray">'+(n||'—')+'</span>';
+}
+
+function feStatusBadge(s){
+  const m={aberto:'<span class="fe-badge fe-badge-green">Aberto</span>',fechado:'<span class="fe-badge fe-badge-gray">Fechado</span>',pausado:'<span class="fe-badge fe-badge-yellow">Pausado</span>'};
+  return m[s]||'<span class="fe-badge fe-badge-gray">'+(s||'—')+'</span>';
+}
+
+function feCalcEpley(c,r){return c*(1+r/30);}
+function feCalcBrzycki(c,r){return c/(1.0278-0.0278*r);}
+function feCalcCI(pse,dur){return pse*dur;}
+function feSimIndex(a,b){const mn=Math.min(a,b),mx=Math.max(a,b);if(!mx||mx===0) return null;return Math.round((mn/mx)*100);}
+
+function feCalcularIdade(dn){
+  const h=new Date(),n=new Date(dn);
+  let i=h.getFullYear()-n.getFullYear();
+  const m=h.getMonth()-n.getMonth();
+  if(m<0||(m===0&&h.getDate()<n.getDate())) i--;
+  return i;
+}
+
+function feSegundaAtual(){
+  const d=new Date();
+  const dy=d.getDay(); // 0=dom,1=seg,...,6=sab
+  const diff=dy===0?-6:1-dy; // se domingo volta 6; senão vai até segunda
+  const s=new Date(d);s.setDate(d.getDate()+diff);
+  return s.toISOString().split('T')[0];
+}
+
+/* ---- DASHBOARD ---- */
+async function navFEsportiva(){
+  set(FE_CSS+`<div class="fe-wrap">
+    <div class="fe-header">
+      <div>
+        <div class="fe-title"><i class="ti ti-run" style="color:#2563eb"></i> Fisioterapia Esportiva</div>
+        <div class="fe-subtitle">Avaliação e acompanhamento de atletas e pacientes</div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button class="fe-btn fe-btn-primary" onclick="abrirModalNovoProntuario()"><i class="ti ti-plus"></i> Novo Prontuário</button>
+      </div>
+    </div>
+    <div style="padding:20px 24px">
+      <div class="fe-row" style="margin-bottom:20px">
+        <div class="fe-card" style="flex:1;min-width:140px">
+          <div class="fe-card-title">Prontuários</div>
+          <div id="fe-stat-total" style="font-size:2rem;font-weight:800;color:#60a5fa">—</div>
+          <div style="font-size:.8rem;color:#888">cadastros</div>
+        </div>
+        <div class="fe-card" style="flex:1;min-width:140px">
+          <div class="fe-card-title">Episódios Abertos</div>
+          <div id="fe-stat-abertos" style="font-size:2rem;font-weight:800;color:#34d399">—</div>
+          <div style="font-size:.8rem;color:#888">em andamento</div>
+        </div>
+        <div class="fe-card" style="flex:1;min-width:140px">
+          <div class="fe-card-title">Atletas</div>
+          <div id="fe-stat-atletas" style="font-size:2rem;font-weight:800;color:#f59e0b">—</div>
+          <div style="font-size:.8rem;color:#888">módulo ativo</div>
+        </div>
+        <div class="fe-card" style="flex:1;min-width:140px">
+          <div class="fe-card-title">Esta Semana</div>
+          <div id="fe-stat-semana" style="font-size:2rem;font-weight:800;color:#a78bfa">—</div>
+          <div style="font-size:.8rem;color:#888">sessões de treino</div>
+        </div>
+      </div>
+      <div class="fe-section-title"><i class="ti ti-users"></i> Prontuários</div>
+      <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <input class="fe-input" id="fe-busca" placeholder="Buscar por nome..." style="max-width:300px" oninput="feBuscar(this.value)">
+      </div>
+      <div id="fe-lista-prontuarios"><div style="color:#888;padding:20px;text-align:center"><i class="ti ti-loader"></i> Carregando...</div></div>
+    </div>
+  </div>
+  <div id="fe-modal-container"></div>`);
+  await feCarregarDashboard();
+}
+
+async function feCarregarDashboard(){
+  try{
+    const[pronts,epis,atletas,sessoes]=await Promise.all([
+      feApi('fisio_prontuarios',{select:'id,nome_display,ref_tipo,ref_id,created_at'}),
+      feApi('fisio_episodios',{filters:['status=eq.aberto'],select:'id,prontuario_id'}),
+      feApi('fisio_atleta',{select:'id'}),
+      feApi('fisio_treino_sessoes',{filters:[`data_sessao=gte.${feSegundaAtual()}`],select:'id'})
+    ]);
+    document.getElementById('fe-stat-total').textContent=pronts.length;
+    document.getElementById('fe-stat-abertos').textContent=epis.length;
+    document.getElementById('fe-stat-atletas').textContent=atletas.length;
+    document.getElementById('fe-stat-semana').textContent=sessoes.length;
+    feRenderLista(pronts,new Set(epis.map(e=>e.prontuario_id)));
+  }catch(e){
+    document.getElementById('fe-lista-prontuarios').innerHTML=`<div style="color:#f87171;padding:20px">Erro: ${esc(e.message)}</div>`;
+  }
+}
+
+let _fePronts=[];
+function feRenderLista(pronts,episAbertos){
+  _fePronts=pronts;
+  const el=document.getElementById('fe-lista-prontuarios');
+  if(!pronts.length){el.innerHTML='<div style="color:#666;padding:20px;text-align:center">Nenhum prontuário. Clique em "Novo Prontuário".</div>';return;}
+  el.innerHTML=pronts.map(p=>`
+    <div class="fe-prontuario-item" onclick="feAbrirPront('${p.id}')">
+      <div class="fe-pront-avatar">${feIniciais(p.nome_display)}</div>
+      <div class="fe-pront-info">
+        <div class="fe-pront-name">${esc(p.nome_display||'—')}</div>
+        <div class="fe-pront-sub">${p.ref_tipo==='externo'?'Paciente externo':p.ref_tipo==='aluno'?'Aluno':p.ref_tipo} · ${feDataBr(p.created_at)}</div>
+      </div>
+      ${episAbertos&&episAbertos.has?.(p.id)?'<span class="fe-badge fe-badge-green">Aberto</span>':'<span class="fe-badge fe-badge-gray">Sem episódio</span>'}
+      <i class="ti ti-chevron-right" style="color:#444"></i>
+    </div>`).join('');
+}
+
+function feBuscar(q){
+  const r=q?_fePronts.filter(p=>p.nome_display?.toLowerCase().includes(q.toLowerCase())):_fePronts;
+  feRenderLista(r,new Set());
+}
+
+/* ---- PRONTUÁRIO ---- */
+async function feAbrirPront(id){
+  feState.prontuarioId=id;
+  set(FE_CSS+`<div class="fe-wrap">
+    <div class="fe-topbar">
+      <span class="fe-breadcrumb" onclick="nav('f_esportiva')">Fisio Esportiva</span>
+      <span class="fe-breadcrumb-sep">/</span>
+      <span style="color:#e8e8e8;font-size:.85rem" id="fe-pront-bread">Prontuário</span>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button class="fe-btn fe-btn-green fe-btn-sm" onclick="abrirModalNovoEpisodio('${id}')"><i class="ti ti-plus"></i> Novo Episódio</button>
+      </div>
+    </div>
+    <div id="fe-pront-content" style="padding:20px 24px"><div style="color:#888;text-align:center;padding:40px"><i class="ti ti-loader"></i></div></div>
+    <div id="fe-modal-container"></div>
+  </div>`);
+  try{
+    const[pront,epis]=await Promise.all([
+      feApi('fisio_prontuarios',{filters:[`id=eq.${id}`]}),
+      feApi('fisio_episodios',{filters:[`prontuario_id=eq.${id}`],order:'created_at.desc'})
+    ]);
+    const p=pront[0];if(!p) return;
+    document.getElementById('fe-pront-bread').textContent=p.nome_display||'Prontuário';
+    document.getElementById('fe-pront-content').innerHTML=`
+      <div class="fe-row" style="margin-bottom:20px">
+        <div class="fe-card" style="flex:2">
+          <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+            <div style="width:52px;height:52px;border-radius:50%;background:#1e3a5f;display:flex;align-items:center;justify-content:center;font-size:1.3rem;font-weight:800;color:#60a5fa;flex-shrink:0">${feIniciais(p.nome_display)}</div>
+            <div>
+              <div style="font-size:1.2rem;font-weight:700;color:#fff">${esc(p.nome_display||'—')}</div>
+              <div style="font-size:.82rem;color:#888;margin-top:2px">${p.ref_tipo==='externo'?'Paciente externo':p.ref_tipo==='aluno'?'Aluno':'Paciente fisio'}${p.ext_data_nascimento?' · '+feCalcularIdade(p.ext_data_nascimento)+' anos':''}</div>
+            </div>
+          </div>
+          <div class="fe-grid2" style="font-size:.85rem">
+            ${p.ext_telefone?`<div><span class="fe-label">Telefone</span>${esc(p.ext_telefone)}</div>`:''}
+            ${p.ext_email?`<div><span class="fe-label">E-mail</span>${esc(p.ext_email)}</div>`:''}
+            ${p.ext_profissao?`<div><span class="fe-label">Profissão</span>${esc(p.ext_profissao)}</div>`:''}
+            ${p.ext_dominancia?`<div><span class="fe-label">Dominância</span>${esc(p.ext_dominancia)}</div>`:''}
+          </div>
+        </div>
+        <div class="fe-card" style="flex:1;min-width:200px">
+          <div class="fe-card-title">Episódios</div>
+          <div style="font-size:2rem;font-weight:800;color:#60a5fa">${epis.length}</div>
+          <div style="font-size:.8rem;color:#888">${epis.filter(e=>e.status==='aberto').length} aberto(s)</div>
+        </div>
+      </div>
+      <div class="fe-section-title"><i class="ti ti-history"></i> Episódios</div>
+      <div class="fe-timeline">
+        ${epis.length?epis.map(e=>`
+          <div class="fe-tl-item">
+            <div class="fe-tl-dot ${e.status==='aberto'?'green':''}"></div>
+            <div class="fe-tl-date">${feDataBr(e.data_abertura)}</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:2px">
+              <div class="fe-tl-title">${esc(e.titulo||'Episódio')}</div>
+              ${feStatusBadge(e.status)}
+            </div>
+            ${e.diagnostico_fisio?`<div class="fe-tl-sub">${esc(e.diagnostico_fisio)}</div>`:''}
+            <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+              <button class="fe-btn fe-btn-ghost fe-btn-sm" onclick="feAbrirEpisodio('${e.id}','${id}')"><i class="ti ti-stethoscope"></i> Abrir</button>
+              ${e.status==='aberto'?`<button class="fe-btn fe-btn-sm" style="background:#1a1a1a;border:1px solid #333;color:#888" onclick="feFecharEpisodio('${e.id}','${id}')"><i class="ti ti-square-check"></i> Fechar</button>`:''}
+            </div>
+          </div>`).join(''):'<div style="color:#666;font-size:.9rem">Nenhum episódio.</div>'}
+      </div>`;
+  }catch(e){
+    document.getElementById('fe-pront-content').innerHTML=`<div style="color:#f87171">${esc(e.message)}</div>`;
+  }
+}
+
+/* ---- EPISÓDIO COM ABAS ---- */
+async function feAbrirEpisodio(episodioId,prontuarioId){
+  feState.episodioId=episodioId;
+  feState.prontuarioId=prontuarioId||feState.prontuarioId;
+  feState.currentTab='ortopedica';
+  set(FE_CSS+`<div class="fe-wrap">
+    <div class="fe-topbar">
+      <span class="fe-breadcrumb" onclick="nav('f_esportiva')">Fisio Esportiva</span>
+      <span class="fe-breadcrumb-sep">/</span>
+      <span class="fe-breadcrumb" onclick="feAbrirPront('${feState.prontuarioId}')">Prontuário</span>
+      <span class="fe-breadcrumb-sep">/</span>
+      <span style="color:#e8e8e8;font-size:.85rem" id="fe-epi-bread">Episódio</span>
+    </div>
+    <div style="padding:16px 24px 0">
+      <div class="fe-tabs" id="fe-episode-tabs">
+        <button class="fe-tab act" data-tab="ortopedica" onclick="feTrocarAba('ortopedica')"><i class="ti ti-stethoscope"></i> Ortopédica</button>
+        <button class="fe-tab" data-tab="atleta" onclick="feTrocarAba('atleta')"><i class="ti ti-trophy"></i> Atleta & RTS</button>
+        <button class="fe-tab" data-tab="forca" onclick="feTrocarAba('forca')"><i class="ti ti-barbell"></i> Força</button>
+        <button class="fe-tab" data-tab="carga" onclick="feTrocarAba('carga')"><i class="ti ti-chart-bar"></i> Carga Semanal</button>
+        <button class="fe-tab" data-tab="evolucao" onclick="feTrocarAba('evolucao')"><i class="ti ti-timeline"></i> Evolução</button>
+      </div>
+    </div>
+    <div id="fe-aba-content" style="padding:0 24px 24px"><div style="color:#888;text-align:center;padding:40px"><i class="ti ti-loader"></i></div></div>
+    <div id="fe-modal-container"></div>
+  </div>`);
+  try{
+    const r=await feApi('fisio_episodios',{filters:[`id=eq.${episodioId}`]});
+    const e=r[0];if(e) document.getElementById('fe-epi-bread').textContent=e.titulo||'Episódio';
+  }catch(_){}
+  await feTrocarAba('ortopedica');
+}
+
+/* stubs de rotas (rota -> feAbrirEpisodio já gerencia as abas) */
+async function navFEPront(){if(feState.prontuarioId) await feAbrirPront(feState.prontuarioId); else nav('f_esportiva');}
+async function navFEAvalia(){await feTrocarAba('ortopedica');}
+async function navFEAtleta(){await feTrocarAba('atleta');}
+async function navFEForca(){await feTrocarAba('forca');}
+async function navFECarga(){await feTrocarAba('carga');}
+async function navFEEvolucao(){await feTrocarAba('evolucao');}
+
+async function feTrocarAba(aba){
+  feState.currentTab=aba;
+  document.querySelectorAll('.fe-tab').forEach(t=>t.classList.toggle('act',t.dataset.tab===aba));
+  const c=document.getElementById('fe-aba-content');
+  c.innerHTML='<div style="color:#888;text-align:center;padding:40px"><i class="ti ti-loader"></i></div>';
+  if(aba==='ortopedica') await feRenderOrtopedica();
+  else if(aba==='atleta') await feRenderAtleta();
+  else if(aba==='forca') await feRenderForca();
+  else if(aba==='carga') await feRenderCarga();
+  else if(aba==='evolucao') await feRenderEvolucao();
+}
+
+/* ---- ABA ORTOPÉDICA ---- */
+async function feRenderOrtopedica(){
+  const c=document.getElementById('fe-aba-content');
+  try{
+    const avals=await feApi('fisio_avaliacoes',{filters:[`episodio_id=eq.${feState.episodioId}`],order:'created_at.desc'});
+    const av=avals[0]||null;
+    c.innerHTML=`<div style="margin-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <div class="fe-section-title" style="margin:0"><i class="ti ti-clipboard-check"></i> Avaliação Ortopédica</div>
+        <button class="fe-btn fe-btn-primary fe-btn-sm" onclick="feFormAvaliacao(${av?`'${av.id}'`:'null'})">
+          <i class="ti ti-${av?'edit':'plus'}"></i> ${av?'Editar':'Nova Avaliação'}
+        </button>
+      </div>
+      ${av?feResumoAv(av):`<div class="fe-card" style="text-align:center;padding:40px;color:#666"><div style="font-size:2rem;margin-bottom:8px">📋</div><div>Nenhuma avaliação ortopédica.</div></div>`}
+      ${avals.length>1?`<div style="margin-top:16px"><div class="fe-section-title">Avaliações anteriores</div>
+        ${avals.slice(1).map(a=>`<div class="fe-prontuario-item" onclick="feFormAvaliacao('${a.id}')">
+          <div class="fe-pront-info"><div class="fe-pront-name">${feDataBr(a.created_at)}</div>
+          <div class="fe-pront-sub">${esc(JSON.parse(a.sintese||'{}').diagnostico_fisio||'—')}</div></div>
+          <i class="ti ti-chevron-right" style="color:#444"></i></div>`).join('')}</div>`:''}
+    </div>`;
+  }catch(e){c.innerHTML=`<div style="color:#f87171;padding:20px">${esc(e.message)}</div>`;}
+}
+
+function feResumoAv(av){
+  const an=JSON.parse(av.anamnese||'{}');
+  const psfs=JSON.parse(av.psfs_atividades||'[]');
+  const sint=JSON.parse(av.sintese||'{}');
+  return `<div class="fe-grid2">
+    <div class="fe-card">
+      <div class="fe-card-title">Anamnese</div>
+      ${an.queixa_principal?`<div style="margin-bottom:8px"><span class="fe-label">Queixa</span>${esc(an.queixa_principal)}</div>`:''}
+      ${an.regiao?`<div style="margin-bottom:8px"><span class="fe-label">Região</span>${esc(an.regiao)}${an.lateralidade?' · '+esc(an.lateralidade):''}</div>`:''}
+      ${an.dor_atual!=null?`<div><span class="fe-label">Dor</span><span style="color:${an.dor_atual>=7?'#f87171':an.dor_atual>=4?'#f59e0b':'#34d399'};font-weight:700">${an.dor_atual}/10</span></div>`:''}
+    </div>
+    <div class="fe-card">
+      <div class="fe-card-title">PSFS</div>
+      ${psfs.length?psfs.slice(0,3).map(a=>`
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <div style="flex:1;font-size:.85rem">${esc(a.atividade||'—')}</div>
+          <span style="font-weight:700;color:${a.pontuacao>=7?'#34d399':a.pontuacao>=4?'#60a5fa':'#f87171'}">${a.pontuacao??'—'}/10</span>
+        </div>
+        <div class="fe-chart-bar"><div class="fe-chart-fill" style="width:${(a.pontuacao||0)*10}%;background:${a.pontuacao>=7?'#059669':a.pontuacao>=4?'#2563eb':'#dc2626'}"></div></div>`).join(''):'<div style="color:#666;font-size:.85rem">Sem atividades.</div>'}
+    </div>
+    ${sint.diagnostico_fisio?`<div class="fe-card">
+      <div class="fe-card-title">Diagnóstico Fisioterapêutico</div>
+      <div style="font-size:.9rem">${esc(sint.diagnostico_fisio)}</div>
+      ${sint.meta_funcional?`<div style="margin-top:8px"><span class="fe-label">Meta</span>${esc(sint.meta_funcional)}</div>`:''}
+    </div>`:''}
+  </div>`;
+}
+
+async function feFormAvaliacao(avId){
+  const c=document.getElementById('fe-aba-content');
+  let av={};
+  if(avId&&avId!=='null'){try{const r=await feApi('fisio_avaliacoes',{filters:[`id=eq.${avId}`]});av=r[0]||{};}catch(_){}}
+  const an=JSON.parse(av.anamnese||'{}');
+  const psfs=JSON.parse(av.psfs_atividades||'[{},{},{},{}]');
+  const trg=JSON.parse(av.triagem||'{}');
+  const ef=JSON.parse(av.exame_fisico||'{}');
+  const st=JSON.parse(av.sintese||'{}');
+  c.innerHTML=`<div style="margin-top:16px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <button class="fe-btn fe-btn-ghost fe-btn-sm" onclick="feTrocarAba('ortopedica')"><i class="ti ti-arrow-left"></i> Voltar</button>
+      <div class="fe-section-title" style="margin:0">${(avId&&avId!=='null')?'Editar':'Nova'} Avaliação Ortopédica</div>
+    </div>
+    <div class="fe-card">
+      <div class="fe-card-title">1. Anamnese</div>
+      <div class="fe-row">
+        <div class="fe-col"><label class="fe-label">Queixa principal *</label>
+          <textarea class="fe-textarea" id="a-queixa" rows="2">${esc(an.queixa_principal||'')}</textarea></div>
+      </div>
+      <div class="fe-row" style="margin-top:12px">
+        <div class="fe-col"><label class="fe-label">Região</label>
+          <select class="fe-select" id="a-reg">${['','Cervical','Torácica','Lombar','Ombro','Cotovelo','Punho/Mão','Quadril','Joelho','Tornozelo/Pé','Outro'].map(r=>`<option${an.regiao===r?' selected':''}>${r}</option>`).join('')}</select></div>
+        <div class="fe-col"><label class="fe-label">Lateralidade</label>
+          <select class="fe-select" id="a-lat">${['','Direito','Esquerdo','Bilateral'].map(r=>`<option${an.lateralidade===r?' selected':''}>${r}</option>`).join('')}</select></div>
+        <div class="fe-col"><label class="fe-label">Dor (0–10)</label>
+          <input class="fe-input" id="a-dor" type="number" min="0" max="10" value="${an.dor_atual??''}"></div>
+      </div>
+      <div class="fe-row" style="margin-top:12px">
+        <div class="fe-col"><label class="fe-label">Mecanismo de lesão</label>
+          <input class="fe-input" id="a-mec" value="${esc(an.mecanismo||'')}"></div>
+        <div class="fe-col"><label class="fe-label">Início dos sintomas</label>
+          <input class="fe-input" id="a-ini" type="date" value="${an.inicio||''}"></div>
+      </div>
+      <div class="fe-row" style="margin-top:12px">
+        <div class="fe-col"><label class="fe-label">Comportamento dos sintomas (24h)</label>
+          <textarea class="fe-textarea" id="a-comp" rows="2">${esc(an.comportamento_sintomas||'')}</textarea></div>
+        <div class="fe-col"><label class="fe-label">Fatores piora/alívio</label>
+          <textarea class="fe-textarea" id="a-fat" rows="2">${esc(an.fatores||'')}</textarea></div>
+      </div>
+      <div class="fe-row" style="margin-top:12px">
+        <div class="fe-col"><label class="fe-label">Comorbidades / histórico</label>
+          <textarea class="fe-textarea" id="a-comorb" rows="2">${esc(an.comorbidades||'')}</textarea></div>
+        <div class="fe-col"><label class="fe-label">Objetivos do paciente</label>
+          <textarea class="fe-textarea" id="a-obj" rows="2">${esc(an.objetivos||'')}</textarea></div>
+      </div>
+    </div>
+    <div class="fe-card">
+      <div class="fe-card-title">2. PSFS — Escala Funcional Específica</div>
+      <div style="font-size:.82rem;color:#888;margin-bottom:12px">3–5 atividades relevantes. Pontuação 0 (incapaz) a 10 (normal).</div>
+      ${Array.from({length:4},(_,i)=>`
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div style="color:#666;font-size:.8rem;min-width:14px">${i+1}.</div>
+          <input class="fe-input" id="fe-psfs-at-${i}" placeholder="Atividade..." value="${esc(psfs[i]?.atividade||'')}" style="flex:2">
+          <input class="fe-input" id="fe-psfs-pt-${i}" type="number" min="0" max="10" placeholder="Pts" value="${psfs[i]?.pontuacao??''}" style="flex:0 0 70px">
+          <select class="fe-select" id="fe-psfs-ctx-${i}" style="flex:1">
+            ${['','Repouso','Exercício','Manhã seguinte','Trabalho','Lazer'].map(c=>`<option${psfs[i]?.contexto===c?' selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>`).join('')}
+    </div>
+    <div class="fe-card">
+      <div class="fe-card-title">3. Triagem Clínica</div>
+      <div class="fe-row">
+        <div class="fe-col"><label class="fe-label">Sinais de alerta</label>
+          <textarea class="fe-textarea" id="a-rf" rows="2">${esc(trg.red_flags||'')}</textarea></div>
+        <div class="fe-col"><label class="fe-label">Achados neurológicos</label>
+          <textarea class="fe-textarea" id="a-neuro" rows="2">${esc(trg.achados_neuro||'')}</textarea></div>
+      </div>
+      <div class="fe-row" style="margin-top:12px">
+        <div class="fe-col"><label class="fe-label">Decisão clínica</label>
+          <textarea class="fe-textarea" id="a-dec" rows="2">${esc(trg.decisao_clinica||'')}</textarea></div>
+        <div class="fe-col"><label class="fe-label">Encaminhamento</label>
+          <textarea class="fe-textarea" id="a-enc" rows="2">${esc(trg.encaminhamento||'')}</textarea></div>
+      </div>
+    </div>
+    <div class="fe-card">
+      <div class="fe-card-title">4. Exame Físico</div>
+      <div class="fe-row" style="margin-bottom:12px">
+        <div class="fe-col"><label class="fe-label">Região</label>
+          <select class="fe-select" id="a-ef-reg">${['','Cervical','Torácica','Lombar','Ombro','Cotovelo','Punho/Mão','Quadril','Joelho','Tornozelo/Pé'].map(r=>`<option${ef.regiao===r?' selected':''}>${r}</option>`).join('')}</select></div>
+      </div>
+      <div class="fe-row">
+        <div class="fe-col"><label class="fe-label">ADM ativa</label>
+          <textarea class="fe-textarea" id="a-adm-at" rows="2" placeholder="Flexão D 90°...">${esc(ef.adm_ativa||'')}</textarea></div>
+        <div class="fe-col"><label class="fe-label">ADM passiva</label>
+          <textarea class="fe-textarea" id="a-adm-pa" rows="2">${esc(ef.adm_passiva||'')}</textarea></div>
+      </div>
+      <div class="fe-row" style="margin-top:12px">
+        <div class="fe-col"><label class="fe-label">Força muscular (TMM 0–5)</label>
+          <textarea class="fe-textarea" id="a-tmm" rows="2" placeholder="Abdutores D: 4+, E: 5...">${esc(ef.forca_tmm||'')}</textarea></div>
+        <div class="fe-col"><label class="fe-label">Testes especiais</label>
+          <textarea class="fe-textarea" id="a-testes" rows="2" placeholder="Lachman +, McMurray -...">${esc(ef.testes_especiais||'')}</textarea></div>
+      </div>
+      <div class="fe-row" style="margin-top:12px">
+        <div class="fe-col"><label class="fe-label">Resposta à carga</label>
+          <textarea class="fe-textarea" id="a-carga" rows="2">${esc(ef.resposta_carga||'')}</textarea></div>
+        <div class="fe-col"><label class="fe-label">Observações</label>
+          <textarea class="fe-textarea" id="a-obs" rows="2">${esc(ef.observacoes||'')}</textarea></div>
+      </div>
+    </div>
+    <div class="fe-card">
+      <div class="fe-card-title">5. Síntese e Plano</div>
+      <div class="fe-row">
+        <div class="fe-col"><label class="fe-label">Diagnóstico fisioterapêutico *</label>
+          <textarea class="fe-textarea" id="a-diag" rows="2">${esc(st.diagnostico_fisio||'')}</textarea></div>
+        <div class="fe-col"><label class="fe-label">Hipóteses e achados</label>
+          <textarea class="fe-textarea" id="a-hipot" rows="2">${esc(st.hipoteses||'')}</textarea></div>
+      </div>
+      <div class="fe-row" style="margin-top:12px">
+        <div class="fe-col"><label class="fe-label">Meta funcional</label>
+          <textarea class="fe-textarea" id="a-meta" rows="2">${esc(st.meta_funcional||'')}</textarea></div>
+        <div class="fe-col"><label class="fe-label">Plano terapêutico</label>
+          <textarea class="fe-textarea" id="a-plano" rows="2">${esc(st.plano_terapeutico||'')}</textarea></div>
+      </div>
+      <div class="fe-row" style="margin-top:12px">
+        <div class="fe-col"><label class="fe-label">Critérios de progressão</label>
+          <input class="fe-input" id="a-crit" value="${esc(st.criterios_progressao||'')}"></div>
+        <div class="fe-col"><label class="fe-label">Data de reavaliação</label>
+          <input class="fe-input" id="a-reav" type="date" value="${st.data_reavaliacao||''}"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:4px;padding-bottom:32px">
+      <button class="fe-btn fe-btn-ghost" onclick="feTrocarAba('ortopedica')">Cancelar</button>
+      <button class="fe-btn fe-btn-primary" id="fe-btn-sav" onclick="feSalvarAv('${(avId&&avId!=='null')?avId:''}')">
+        <i class="ti ti-device-floppy"></i> Salvar
+      </button>
+    </div>
+  </div>`;
+}
+
+async function feSalvarAv(id){
+  const btn=document.getElementById('fe-btn-sav');
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Salvando...';
+  try{
+    const psfs=Array.from({length:4},(_,i)=>({
+      atividade:document.getElementById(`fe-psfs-at-${i}`)?.value||'',
+      pontuacao:parseFloat(document.getElementById(`fe-psfs-pt-${i}`)?.value)||null,
+      contexto:document.getElementById(`fe-psfs-ctx-${i}`)?.value||''
+    })).filter(a=>a.atividade);
+    const diag=document.getElementById('a-diag')?.value||'';
+    const payload={
+      episodio_id:feState.episodioId,
+      anamnese:JSON.stringify({queixa_principal:document.getElementById('a-queixa')?.value||'',regiao:document.getElementById('a-reg')?.value||'',lateralidade:document.getElementById('a-lat')?.value||'',inicio:document.getElementById('a-ini')?.value||'',mecanismo:document.getElementById('a-mec')?.value||'',dor_atual:parseFloat(document.getElementById('a-dor')?.value)||null,comportamento_sintomas:document.getElementById('a-comp')?.value||'',fatores:document.getElementById('a-fat')?.value||'',comorbidades:document.getElementById('a-comorb')?.value||'',objetivos:document.getElementById('a-obj')?.value||''}),
+      psfs_atividades:JSON.stringify(psfs),
+      triagem:JSON.stringify({red_flags:document.getElementById('a-rf')?.value||'',achados_neuro:document.getElementById('a-neuro')?.value||'',decisao_clinica:document.getElementById('a-dec')?.value||'',encaminhamento:document.getElementById('a-enc')?.value||''}),
+      exame_fisico:JSON.stringify({regiao:document.getElementById('a-ef-reg')?.value||'',adm_ativa:document.getElementById('a-adm-at')?.value||'',adm_passiva:document.getElementById('a-adm-pa')?.value||'',forca_tmm:document.getElementById('a-tmm')?.value||'',testes_especiais:document.getElementById('a-testes')?.value||'',resposta_carga:document.getElementById('a-carga')?.value||'',observacoes:document.getElementById('a-obs')?.value||''}),
+      sintese:JSON.stringify({diagnostico_fisio:diag,hipoteses:document.getElementById('a-hipot')?.value||'',meta_funcional:document.getElementById('a-meta')?.value||'',plano_terapeutico:document.getElementById('a-plano')?.value||'',criterios_progressao:document.getElementById('a-crit')?.value||'',data_reavaliacao:document.getElementById('a-reav')?.value||''}),
+      diagnostico_fisio:diag||null
+    };
+    if(id) await feApi('fisio_avaliacoes',{method:'PATCH',body:payload,filters:[`id=eq.${id}`]});
+    else await feApi('fisio_avaliacoes',{method:'POST',body:payload});
+    if(diag&&feState.episodioId) await feApi('fisio_episodios',{method:'PATCH',body:{diagnostico_fisio:diag},filters:[`id=eq.${feState.episodioId}`]});
+    await feTrocarAba('ortopedica');
+  }catch(e){btn.disabled=false;btn.innerHTML='<i class="ti ti-device-floppy"></i> Salvar';alert('Erro: '+e.message);}
+}
+
+/* ---- ABA ATLETA ---- */
+async function feRenderAtleta(){
+  const c=document.getElementById('fe-aba-content');
+  try{
+    const r=await feApi('fisio_atleta',{filters:[`episodio_id=eq.${feState.episodioId}`]});
+    const at=r[0]||null;
+    if(!at){
+      c.innerHTML=`<div style="margin-top:16px"><div class="fe-card" style="text-align:center;padding:40px;color:#666">
+        <div style="font-size:2rem;margin-bottom:8px">🏆</div><div>Módulo Atleta não ativado.</div>
+        <button class="fe-btn fe-btn-primary" style="margin-top:16px" onclick="feFormAtleta(null)"><i class="ti ti-plus"></i> Ativar Módulo Atleta</button>
+      </div></div>`;return;
+    }
+    feState.atletaId=at.id;
+    const testes=JSON.parse(at.testes_realizados||'[]');
+    const rts=JSON.parse(at.rts_dados||'{}');
+    c.innerHTML=`<div style="margin-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <div class="fe-section-title" style="margin:0"><i class="ti ti-trophy"></i> Módulo Atleta</div>
+        <div style="display:flex;gap:8px">
+          <button class="fe-btn fe-btn-ghost fe-btn-sm" onclick="feFormAtleta('${at.id}')"><i class="ti ti-edit"></i> Editar</button>
+          <button class="fe-btn fe-btn-primary fe-btn-sm" onclick="feFormTeste('${at.id}')"><i class="ti ti-plus"></i> Novo Teste</button>
+        </div>
+      </div>
+      <div class="fe-grid2" style="margin-bottom:20px">
+        <div class="fe-card">
+          <div class="fe-card-title">Perfil do Atleta</div>
+          <div class="fe-row" style="font-size:.88rem;gap:16px">
+            <div><span class="fe-label">Modalidade</span>${esc(at.modalidade||'—')}</div>
+            <div><span class="fe-label">Nível</span>${feNivelBadge(at.nivel)}</div>
+            ${at.posicao?`<div><span class="fe-label">Posição</span>${esc(at.posicao)}</div>`:''}
+            ${at.dominancia?`<div><span class="fe-label">Dominância</span>${esc(at.dominancia)}</div>`:''}
+          </div>
+          ${at.historico_lesoes?`<div style="margin-top:10px"><span class="fe-label">Histórico</span><div style="font-size:.85rem">${esc(at.historico_lesoes)}</div></div>`:''}
+          ${at.demandas_especificas?`<div style="margin-top:10px"><span class="fe-label">Demandas</span><div style="font-size:.85rem">${esc(at.demandas_especificas)}</div></div>`:''}
+        </div>
+        <div class="fe-card">
+          <div class="fe-card-title">Status RTS</div>
+          ${feRenderRTSStatus(at.rts_etapa||0)}
+        </div>
+      </div>
+      ${testes.length?`<div class="fe-section-title"><i class="ti ti-ruler"></i> Testes</div>
+      <div class="fe-card" style="padding:0;overflow:hidden">
+        ${testes.map(t=>{
+          const vd=parseFloat(t.valor_d),ve=parseFloat(t.valor_e);
+          const is=(vd&&ve)?feSimIndex(Math.min(vd,ve),Math.max(vd,ve)):null;
+          return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #1a1a1a">
+            <div style="flex:1"><div style="font-weight:600;font-size:.9rem">${esc(t.nome_teste||'—')}</div>
+            <div style="font-size:.78rem;color:#888">${feDataBr(t.data)} · ${esc(t.unidade||'')}</div></div>
+            <div style="text-align:right">
+              ${t.valor_d?`<div style="font-size:.85rem"><span style="color:#888">D: </span><span style="color:#60a5fa;font-weight:700">${t.valor_d}</span></div>`:''}
+              ${t.valor_e?`<div style="font-size:.85rem"><span style="color:#888">E: </span><span style="color:#a78bfa;font-weight:700">${t.valor_e}</span></div>`:''}
+              ${is!==null?`<span class="fe-badge" style="background:${is>=90?'#064e3b':is>=75?'#78350f':'#7f1d1d'};color:#fff">IS: ${is}%</span>`:''}
+            </div>
+          </div>`;}).join('')}
+      </div>`:''}
+      <div class="fe-section-title" style="margin-top:20px"><i class="ti ti-stairs"></i> Progressão RTS — Ardern et al. 2016</div>
+      ${feRenderRTSEtapas(at.rts_etapa||0,rts,at.id)}
+    </div>`;
+  }catch(e){c.innerHTML=`<div style="color:#f87171;padding:20px">${esc(e.message)}</div>`;}
+}
+
+function feRenderRTSStatus(etapa){
+  const labels=['Pré-RTS','Retorno à Participação','Retorno ao Esporte','Retorno à Performance'];
+  const cores=['#666','#f59e0b','#60a5fa','#34d399'];
+  const e=Math.min(etapa,3);
+  return `<div style="text-align:center;padding:16px 0">
+    <div style="font-size:2.5rem;font-weight:800;color:${cores[e]}">${e}/3</div>
+    <div style="font-size:.9rem;font-weight:600;color:${cores[e]};margin-top:4px">${labels[e]}</div>
+    <div style="display:flex;justify-content:center;gap:6px;margin-top:12px">
+      ${[1,2,3].map(i=>`<div style="width:40px;height:6px;border-radius:3px;background:${i<=e?cores[Math.min(i,3)]:'#2a2a2a'}"></div>`).join('')}
+    </div>
+  </div>`;
+}
+
+function feRenderRTSEtapas(etapaAtual,rts,atletaId){
+  const etapas=[
+    {num:1,nome:'Retorno à Participação',desc:'Treinamento com a equipe sem restrições de contato',cor:'#f59e0b',bg:'#78350f'},
+    {num:2,nome:'Retorno ao Esporte',desc:'Jogo/competição sem restrições, monitorado',cor:'#60a5fa',bg:'#1e3a5f'},
+    {num:3,nome:'Retorno à Performance',desc:'Performance pré-lesão reestablecida',cor:'#34d399',bg:'#064e3b'}
+  ];
+  return etapas.map(et=>{
+    const done=etapaAtual>=et.num,active=etapaAtual===et.num-1;
+    const dados=rts[`etapa${et.num}`]||{};
+    return `<div class="fe-rts-step ${done?'done':active?'active':''}">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div class="fe-rts-step-num ${done?'done':active?'active':''}">
+          ${done?'<i class="ti ti-check"></i>':et.num}
+        </div>
+        <div>
+          <div style="font-weight:700;color:${done?et.cor:active?et.cor:'#888'}">${et.nome}</div>
+          <div style="font-size:.78rem;color:#666">${et.desc}</div>
+        </div>
+      </div>
+      ${dados.criterios?`<div style="font-size:.85rem;color:#aaa;margin-bottom:8px"><span class="fe-label">Critérios</span>${esc(dados.criterios)}</div>`:''}
+      ${dados.data_decisao?`<div style="font-size:.82rem;color:#888"><i class="ti ti-calendar"></i> ${feDataBr(dados.data_decisao)}</div>`:''}
+      ${!done&&active?`<button class="fe-btn fe-btn-sm" style="background:${et.bg};color:${et.cor};border:1px solid ${et.cor};margin-top:8px" onclick="feConfirmRTS(${et.num},'${atletaId}')"><i class="ti ti-square-check"></i> Confirmar Etapa ${et.num}</button>`:''}
+    </div>`;}).join('');
+}
+
+async function feConfirmRTS(etapa,atletaId){
+  const nomes=['','Retorno à Participação','Retorno ao Esporte','Retorno à Performance'];
+  document.getElementById('fe-modal-container').innerHTML=`
+    <div class="fe-modal-bg" onclick="if(event.target===this)this.remove()">
+      <div class="fe-modal">
+        <div class="fe-modal-title"><i class="ti ti-square-check" style="color:#34d399"></i> Confirmar Etapa ${etapa}: ${nomes[etapa]}</div>
+        <div style="color:#888;font-size:.88rem;margin-bottom:16px">Decisão clínica compartilhada. Nenhum teste isolado determina a liberação automaticamente. (Ardern et al. 2016)</div>
+        <div class="fe-row" style="margin-bottom:12px">
+          <div class="fe-col"><label class="fe-label">Data</label><input class="fe-input" id="rts-data" type="date" value="${feHoje()}"></div>
+          <div class="fe-col"><label class="fe-label">Fisioterapeuta</label><input class="fe-input" id="rts-fisio" value="${esc(usuarioAtual?.nome||'')}"></div>
+        </div>
+        <div style="margin-bottom:12px"><label class="fe-label">Critérios que justificam a progressão</label>
+          <textarea class="fe-textarea" id="rts-crit" rows="3" placeholder="Força, função, tolerância, confiança do atleta..."></textarea></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="fe-btn fe-btn-ghost" onclick="document.getElementById('fe-modal-container').innerHTML=''">Cancelar</button>
+          <button class="fe-btn fe-btn-green" onclick="feSalvarRTS(${etapa},'${atletaId}')"><i class="ti ti-check"></i> Confirmar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function feSalvarRTS(etapa,atletaId){
+  try{
+    const r=await feApi('fisio_atleta',{filters:[`id=eq.${atletaId}`]});
+    const at=r[0],rts=JSON.parse(at.rts_dados||'{}');
+    rts[`etapa${etapa}`]={data_decisao:document.getElementById('rts-data')?.value||feHoje(),fisioterapeuta:document.getElementById('rts-fisio')?.value||'',criterios:document.getElementById('rts-crit')?.value||''};
+    await feApi('fisio_atleta',{method:'PATCH',body:{rts_etapa:etapa,rts_dados:JSON.stringify(rts)},filters:[`id=eq.${atletaId}`]});
+    document.getElementById('fe-modal-container').innerHTML='';
+    await feTrocarAba('atleta');
+  }catch(e){alert('Erro: '+e.message);}
+}
+
+async function feFormAtleta(id){
+  const c=document.getElementById('fe-aba-content');
+  let at={};
+  if(id){try{const r=await feApi('fisio_atleta',{filters:[`id=eq.${id}`]});at=r[0]||{};}catch(_){}}
+  c.innerHTML=`<div style="margin-top:16px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <button class="fe-btn fe-btn-ghost fe-btn-sm" onclick="feTrocarAba('atleta')"><i class="ti ti-arrow-left"></i> Voltar</button>
+      <div class="fe-section-title" style="margin:0">${id?'Editar':'Ativar'} Módulo Atleta</div>
+    </div>
+    <div class="fe-card">
+      <div class="fe-row">
+        <div class="fe-col"><label class="fe-label">Modalidade *</label><input class="fe-input" id="at-mod" value="${esc(at.modalidade||'')}"></div>
+        <div class="fe-col"><label class="fe-label">Nível</label>
+          <select class="fe-select" id="at-niv">${['','Recreativo','Amador','Profissional'].map(n=>`<option${at.nivel===n?' selected':''}>${n}</option>`).join('')}</select></div>
+      </div>
+      <div class="fe-row" style="margin-top:12px">
+        <div class="fe-col"><label class="fe-label">Posição/Prova</label><input class="fe-input" id="at-pos" value="${esc(at.posicao||'')}"></div>
+        <div class="fe-col"><label class="fe-label">Dominância</label>
+          <select class="fe-select" id="at-dom">${['','Destro','Canhoto','Ambidestro'].map(n=>`<option${at.dominancia===n?' selected':''}>${n}</option>`).join('')}</select></div>
+      </div>
+      <div class="fe-row" style="margin-top:12px">
+        <div class="fe-col"><label class="fe-label">Histórico de lesões</label><textarea class="fe-textarea" id="at-hist" rows="2">${esc(at.historico_lesoes||'')}</textarea></div>
+        <div class="fe-col"><label class="fe-label">Demandas específicas</label><textarea class="fe-textarea" id="at-dem" rows="2" placeholder="aceleração, salto, mudança de direção...">${esc(at.demandas_especificas||'')}</textarea></div>
+      </div>
+      <div class="fe-row" style="margin-top:12px">
+        <div class="fe-col"><label class="fe-label">Calendário</label><input class="fe-input" id="at-cal" value="${esc(at.calendario||'')}"></div>
+        <div class="fe-col"><label class="fe-label">Exposição (h/semana)</label><input class="fe-input" id="at-exp" type="number" min="0" value="${at.exposicao_horas_semana||''}"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:12px;justify-content:flex-end;padding-bottom:32px">
+      <button class="fe-btn fe-btn-ghost" onclick="feTrocarAba('atleta')">Cancelar</button>
+      <button class="fe-btn fe-btn-primary" id="at-btn-sav" onclick="feSalvarAtleta('${id||''}')"><i class="ti ti-device-floppy"></i> ${id?'Salvar':'Ativar'}</button>
+    </div>
+  </div>`;
+}
+
+async function feSalvarAtleta(id){
+  const btn=document.getElementById('at-btn-sav');
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Salvando...';
+  try{
+    const p={episodio_id:feState.episodioId,prontuario_id:feState.prontuarioId,modalidade:document.getElementById('at-mod')?.value||'',nivel:document.getElementById('at-niv')?.value||null,posicao:document.getElementById('at-pos')?.value||null,dominancia:document.getElementById('at-dom')?.value||null,historico_lesoes:document.getElementById('at-hist')?.value||null,demandas_especificas:document.getElementById('at-dem')?.value||null,calendario:document.getElementById('at-cal')?.value||null,exposicao_horas_semana:parseFloat(document.getElementById('at-exp')?.value)||null};
+    if(id) await feApi('fisio_atleta',{method:'PATCH',body:p,filters:[`id=eq.${id}`]});
+    else await feApi('fisio_atleta',{method:'POST',body:p});
+    await feTrocarAba('atleta');
+  }catch(e){btn.disabled=false;btn.innerHTML='<i class="ti ti-device-floppy"></i> Salvar';alert('Erro: '+e.message);}
+}
+
+async function feFormTeste(atletaId){
+  document.getElementById('fe-modal-container').innerHTML=`
+    <div class="fe-modal-bg" onclick="if(event.target===this)this.remove()">
+      <div class="fe-modal">
+        <div class="fe-modal-title"><i class="ti ti-ruler"></i> Registrar Teste</div>
+        <div class="fe-row" style="margin-bottom:12px">
+          <div class="fe-col"><label class="fe-label">Teste *</label>
+            <select class="fe-select" id="t-nome">${['','Single Leg Hop (distância)','Triple Hop (distância)','Cross-over Hop','6m Timed Hop','Y-Balance Test','Dinamometria (N)','Leg Press 1RM','Agachamento unipodal','Forward Step Down','Lateral Step Down','CMJ (altura)','SJ (altura)','Drop Jump RSI','Sprint 10m','Sprint 30m','T-Test (agilidade)','Outro'].map(n=>`<option>${n}</option>`).join('')}</select></div>
+          <div class="fe-col"><label class="fe-label">Data</label><input class="fe-input" id="t-data" type="date" value="${feHoje()}"></div>
+        </div>
+        <div class="fe-row" style="margin-bottom:12px">
+          <div class="fe-col"><label class="fe-label">Valor — D (ou único)</label><input class="fe-input" id="t-vd" type="number" step="0.01" oninput="fePreviewSim()"></div>
+          <div class="fe-col"><label class="fe-label">Valor — E</label><input class="fe-input" id="t-ve" type="number" step="0.01" oninput="fePreviewSim()"></div>
+        </div>
+        <div class="fe-row" style="margin-bottom:12px">
+          <div class="fe-col"><label class="fe-label">Unidade</label>
+            <select class="fe-select" id="t-unit"><option>cm</option><option>m</option><option>s</option><option>N</option><option>kg</option><option>%</option><option>pontos</option></select></div>
+          <div class="fe-col"><label class="fe-label">Dor (0–10)</label><input class="fe-input" id="t-dor" type="number" min="0" max="10"></div>
+        </div>
+        <div id="t-sim-prev" style="display:none" class="fe-rm-result" style="margin-bottom:12px"></div>
+        <div style="margin-bottom:12px"><label class="fe-label">Protocolo / obs</label><textarea class="fe-textarea" id="t-obs" rows="2"></textarea></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="fe-btn fe-btn-ghost" onclick="document.getElementById('fe-modal-container').innerHTML=''">Cancelar</button>
+          <button class="fe-btn fe-btn-green" onclick="feSalvarTeste('${atletaId}')"><i class="ti ti-check"></i> Salvar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function fePreviewSim(){
+  const d=parseFloat(document.getElementById('t-vd')?.value),e=parseFloat(document.getElementById('t-ve')?.value);
+  const el=document.getElementById('t-sim-prev');
+  if(d&&e&&el){
+    const is=feSimIndex(Math.min(d,e),Math.max(d,e));
+    el.style.display='block';
+    el.innerHTML=`<div class="fe-rm-value" style="color:${is>=90?'#34d399':is>=75?'#f59e0b':'#f87171'}">${is}%</div><div class="fe-rm-label">Índice de Simetria · D:${d} · E:${e}</div>`;
+  } else if(el) el.style.display='none';
+}
+
+async function feSalvarTeste(atletaId){
+  try{
+    const r=await feApi('fisio_atleta',{filters:[`id=eq.${atletaId}`]});
+    const testes=JSON.parse(r[0].testes_realizados||'[]');
+    testes.unshift({nome_teste:document.getElementById('t-nome')?.value||'',data:document.getElementById('t-data')?.value||feHoje(),valor_d:document.getElementById('t-vd')?.value||null,valor_e:document.getElementById('t-ve')?.value||null,unidade:document.getElementById('t-unit')?.value||'',dor:document.getElementById('t-dor')?.value||null,protocolo:document.getElementById('t-obs')?.value||''});
+    await feApi('fisio_atleta',{method:'PATCH',body:{testes_realizados:JSON.stringify(testes)},filters:[`id=eq.${atletaId}`]});
+    document.getElementById('fe-modal-container').innerHTML='';
+    await feTrocarAba('atleta');
+  }catch(e){alert('Erro: '+e.message);}
+}
+
+/* ---- ABA FORÇA ---- */
+async function feRenderForca(){
+  const c=document.getElementById('fe-aba-content');
+  try{
+    const[sessoes,hist]=await Promise.all([
+      feApi('fisio_treino_sessoes',{filters:[`episodio_id=eq.${feState.episodioId}`],order:'data_sessao.desc',limit:5}),
+      feApi('fisio_rm_historico',{filters:[`episodio_id=eq.${feState.episodioId}`],order:'data_medicao.desc',limit:20})
+    ]);
+    c.innerHTML=`<div style="margin-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <div class="fe-section-title" style="margin:0"><i class="ti ti-barbell"></i> Treino de Força</div>
+        <div style="display:flex;gap:8px">
+          <button class="fe-btn fe-btn-primary fe-btn-sm" onclick="feFormSessao()"><i class="ti ti-plus"></i> Nova Sessão</button>
+        </div>
+      </div>
+      <div class="fe-card" id="fe-calc-rm">
+        <div class="fe-card-title"><i class="ti ti-calculator"></i> Calculadora 1RM</div>
+        <div style="font-size:.8rem;color:#666;margin-bottom:12px">Fórmulas: Epley W×(1+r/30) e Brzycki W/(1.0278−0.0278r) · Reynolds et al. 2006</div>
+        <div class="fe-row" style="align-items:flex-end">
+          <div class="fe-col"><label class="fe-label">Exercício</label><input class="fe-input" id="rm-ex" placeholder="Leg Press"></div>
+          <div class="fe-col"><label class="fe-label">Carga (kg)</label><input class="fe-input" id="rm-cg" type="number" step="0.5" placeholder="87.5"></div>
+          <div class="fe-col"><label class="fe-label">Repetições *</label><input class="fe-input" id="rm-rp" type="number" min="1" max="12" placeholder="5"></div>
+          <div class="fe-col"><button class="fe-btn fe-btn-primary" onclick="feCalcRM()"><i class="ti ti-calculator"></i> Calcular</button></div>
+        </div>
+        <div id="rm-res" style="margin-top:12px;display:none"></div>
+      </div>
+      <div class="fe-section-title" style="margin-top:20px"><i class="ti ti-history"></i> Sessões Recentes</div>
+      ${sessoes.length?`<div class="fe-card" style="padding:0;overflow:hidden">${sessoes.map(s=>`
+        <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #1a1a1a;cursor:pointer" onclick="feVerSessao('${s.id}')">
+          <div><div style="font-weight:600;font-size:.9rem">${feDataBr(s.data_sessao)} — ${esc(s.tipo_sessao||'Treino')}</div>
+          <div style="font-size:.78rem;color:#888">${s.duracao_minutos||'—'} min · PSE ${s.pse_sessao||'—'} · <span style="color:#60a5fa;font-weight:700">${s.carga_interna_ua||'—'} UA</span></div></div>
+          <i class="ti ti-chevron-right" style="color:#444;margin-left:auto"></i>
+        </div>`).join('')}</div>`:'<div class="fe-card" style="color:#666;text-align:center;padding:24px">Nenhuma sessão.</div>'}
+      ${hist.length?`<div class="fe-section-title" style="margin-top:20px"><i class="ti ti-trending-up"></i> Histórico 1RM</div>
+      <div class="fe-card" style="padding:0;overflow:hidden">${hist.map(h=>`
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #1a1a1a">
+          <div style="flex:1"><div style="font-weight:600;font-size:.9rem">${esc(h.exercicio||'—')}</div>
+          <div style="font-size:.78rem;color:#888">${feDataBr(h.data_medicao)} · ${h.tipo_rm==='medido'?'Medido':h.tipo_rm==='estimado_epley'?'Epley':'Brzycki'}</div></div>
+          <div style="font-size:1.2rem;font-weight:800;color:#60a5fa">${(h.rm_calculado||0).toFixed(1)} kg</div>
+        </div>`).join('')}</div>`:''}
+    </div>`;
+  }catch(e){c.innerHTML=`<div style="color:#f87171;padding:20px">${esc(e.message)}</div>`;}
+}
+
+function feCalcRM(){
+  const cg=parseFloat(document.getElementById('rm-cg')?.value);
+  const rp=parseInt(document.getElementById('rm-rp')?.value);
+  const ex=document.getElementById('rm-ex')?.value||'';
+  const el=document.getElementById('rm-res');
+  if(!cg||!rp) return;
+  const ep=feCalcEpley(cg,rp),br=feCalcBrzycki(cg,rp);
+  const aviso=rp>10?'<div style="font-size:.78rem;color:#f59e0b;margin-top:8px"><i class="ti ti-alert-triangle"></i> Maior incerteza acima de 10 repetições. Confirme se foram repetições máximas com técnica padronizada.</div>':'';
+  el.style.display='block';
+  el.innerHTML=`<div class="fe-grid2">
+    <div class="fe-rm-result"><div class="fe-rm-value">${ep.toFixed(1)} kg</div><div class="fe-rm-label">Epley · ${cg}×${rp}</div></div>
+    <div class="fe-rm-result"><div class="fe-rm-value" style="color:#a78bfa">${br.toFixed(1)} kg</div><div class="fe-rm-label">Brzycki · ${cg}×${rp}</div></div>
+  </div>${aviso}
+  <div style="margin-top:12px;display:flex;gap:8px">
+    <button class="fe-btn fe-btn-green fe-btn-sm" onclick="feSalvarRM(${ep.toFixed(2)},${cg},${rp},'estimado_epley','${ex.replace(/'/g,"\\'")}')"><i class="ti ti-device-floppy"></i> Salvar Epley</button>
+    <button class="fe-btn fe-btn-sm" style="background:#2e1a5f;border:1px solid #a78bfa;color:#a78bfa" onclick="feSalvarRM(${br.toFixed(2)},${cg},${rp},'estimado_brzycki','${ex.replace(/'/g,"\\'")}')"><i class="ti ti-device-floppy"></i> Salvar Brzycki</button>
+  </div>`;
+}
+
+async function feSalvarRM(rmCalc,cg,rp,tipo,ex){
+  try{
+    await feApi('fisio_rm_historico',{method:'POST',body:{episodio_id:feState.episodioId,prontuario_id:feState.prontuarioId,exercicio:ex,carga_kg:cg,repeticoes:rp,rm_calculado:rmCalc,tipo_rm:tipo,data_medicao:feHoje()}});
+    alert('1RM salvo!');await feRenderForca();
+  }catch(e){alert('Erro: '+e.message);}
+}
+
+async function feFormSessao(){
+  document.getElementById('fe-modal-container').innerHTML=`
+    <div class="fe-modal-bg" onclick="if(event.target===this)this.remove()">
+      <div class="fe-modal">
+        <div class="fe-modal-title"><i class="ti ti-barbell"></i> Nova Sessão</div>
+        <div class="fe-row" style="margin-bottom:12px">
+          <div class="fe-col"><label class="fe-label">Data</label><input class="fe-input" id="ses-dt" type="date" value="${feHoje()}"></div>
+          <div class="fe-col"><label class="fe-label">Tipo</label>
+            <select class="fe-select" id="ses-tp">${['Musculação','Fisioterapia','Corrida','Treino técnico','Competição','Outro'].map(t=>`<option>${t}</option>`).join('')}</select></div>
+        </div>
+        <div class="fe-row" style="margin-bottom:12px">
+          <div class="fe-col"><label class="fe-label">Duração (min) *</label><input class="fe-input" id="ses-dur" type="number" min="1" oninput="fePreviewCI()"></div>
+          <div class="fe-col"><label class="fe-label">PSE sessão (0–10) *</label><input class="fe-input" id="ses-pse" type="number" min="0" max="10" oninput="fePreviewCI()"></div>
+        </div>
+        <div id="ses-ci-prev" style="display:none" class="fe-rm-result" style="margin-bottom:12px"></div>
+        <div class="fe-row" style="margin-bottom:12px">
+          <div class="fe-col"><label class="fe-label">Dor durante (0–10)</label><input class="fe-input" id="ses-dor" type="number" min="0" max="10"></div>
+          <div class="fe-col"><label class="fe-label">Resposta D+1</label><input class="fe-input" id="ses-d1" placeholder="ex: leve fadiga..."></div>
+        </div>
+        <div style="margin-bottom:12px"><label class="fe-label">Exercícios (opcional)</label><textarea class="fe-textarea" id="ses-ex" rows="3" placeholder="Leg Press 3×10 60kg..."></textarea></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="fe-btn fe-btn-ghost" onclick="document.getElementById('fe-modal-container').innerHTML=''">Cancelar</button>
+          <button class="fe-btn fe-btn-green" onclick="feSalvarSessao()"><i class="ti ti-check"></i> Salvar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function fePreviewCI(){
+  const dur=parseFloat(document.getElementById('ses-dur')?.value),pse=parseFloat(document.getElementById('ses-pse')?.value);
+  const el=document.getElementById('ses-ci-prev');
+  if(dur&&pse&&el){
+    const ci=feCalcCI(pse,dur);
+    el.style.display='block';
+    el.innerHTML=`<div class="fe-rm-value" style="color:${ci>400?'#f87171':ci>200?'#f59e0b':'#34d399'}">${ci} UA</div><div class="fe-rm-label">Carga Interna = ${dur}min × PSE ${pse} (Foster et al. 2001)</div>`;
+  } else if(el) el.style.display='none';
+}
+
+async function feSalvarSessao(){
+  try{
+    const dur=parseInt(document.getElementById('ses-dur')?.value),pse=parseInt(document.getElementById('ses-pse')?.value);
+    if(!dur||!pse){alert('Duração e PSE são obrigatórios.');return;}
+    await feApi('fisio_treino_sessoes',{method:'POST',body:{episodio_id:feState.episodioId,prontuario_id:feState.prontuarioId,data_sessao:document.getElementById('ses-dt')?.value||feHoje(),tipo_sessao:document.getElementById('ses-tp')?.value||'Musculação',duracao_minutos:dur,pse_sessao:pse,dor_sessao:parseFloat(document.getElementById('ses-dor')?.value)||null,resposta_dia_seguinte:document.getElementById('ses-d1')?.value||null,descricao:document.getElementById('ses-ex')?.value||null}});
+    document.getElementById('fe-modal-container').innerHTML='';
+    await feRenderForca();
+  }catch(e){alert('Erro: '+e.message);}
+}
+
+async function feVerSessao(id){
+  try{
+    const r=await feApi('fisio_treino_sessoes',{filters:[`id=eq.${id}`]});
+    const s=r[0];if(!s) return;
+    document.getElementById('fe-modal-container').innerHTML=`
+      <div class="fe-modal-bg" onclick="if(event.target===this)this.remove()">
+        <div class="fe-modal">
+          <div class="fe-modal-title">Sessão — ${feDataBr(s.data_sessao)}</div>
+          <div class="fe-grid2" style="font-size:.88rem;margin-bottom:16px">
+            <div><span class="fe-label">Tipo</span>${esc(s.tipo_sessao||'—')}</div>
+            <div><span class="fe-label">Duração</span>${s.duracao_minutos||'—'} min</div>
+            <div><span class="fe-label">PSE</span>${s.pse_sessao??'—'}/10</div>
+            <div><span class="fe-label">Carga Interna</span><span style="color:#60a5fa;font-weight:700">${s.carga_interna_ua||'—'} UA</span></div>
+            <div><span class="fe-label">Dor</span>${s.dor_sessao??'—'}/10</div>
+            <div><span class="fe-label">Resposta D+1</span>${esc(s.resposta_dia_seguinte||'—')}</div>
+          </div>
+          ${s.descricao?`<div><span class="fe-label">Exercícios</span><div style="background:#1a1a1a;border-radius:8px;padding:12px;font-size:.85rem;white-space:pre-wrap">${esc(s.descricao)}</div></div>`:''}
+          <div style="margin-top:16px;text-align:right"><button class="fe-btn fe-btn-ghost" onclick="document.getElementById('fe-modal-container').innerHTML=''">Fechar</button></div>
+        </div>
+      </div>`;
+  }catch(e){alert('Erro: '+e.message);}
+}
+
+/* ---- ABA CARGA SEMANAL ---- */
+async function feRenderCarga(){
+  const c=document.getElementById('fe-aba-content');
+  try{
+    const d=new Date();d.setDate(d.getDate()-28);
+    const desde=d.toISOString().split('T')[0];
+    const sessoes=await feApi('fisio_treino_sessoes',{filters:[`episodio_id=eq.${feState.episodioId}`,`data_sessao=gte.${desde}`],order:'data_sessao.asc'});
+    const semanas=feAgruparSemanas(sessoes);
+    const semArr=Object.entries(semanas).sort(([a],[b])=>a>b?1:-1);
+    c.innerHTML=`<div style="margin-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <div class="fe-section-title" style="margin:0"><i class="ti ti-chart-bar"></i> Carga Semanal</div>
+        <button class="fe-btn fe-btn-primary fe-btn-sm" onclick="feFormSessao()"><i class="ti ti-plus"></i> Registrar Sessão</button>
+      </div>
+      <div class="fe-card"><div class="fe-card-title"><i class="ti ti-calendar-week"></i> Semana Atual</div>${feRenderSemAtual(sessoes)}</div>
+      <div class="fe-section-title" style="margin-top:20px"><i class="ti ti-history"></i> Histórico — 4 Semanas</div>
+      ${semArr.length?`<div class="fe-card" style="padding:0;overflow:hidden">
+        <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+          <thead><tr style="border-bottom:1px solid #2a2a2a">
+            <th style="padding:12px 16px;text-align:left;color:#888;font-weight:600">Semana</th>
+            <th style="padding:12px 16px;text-align:center;color:#888;font-weight:600">Sessões</th>
+            <th style="padding:12px 16px;text-align:center;color:#888;font-weight:600">Duração</th>
+            <th style="padding:12px 16px;text-align:center;color:#888;font-weight:600">Carga Interna</th>
+            <th style="padding:12px 16px;text-align:center;color:#888;font-weight:600">Variação</th>
+          </tr></thead>
+          <tbody>${semArr.map(([sem,dados],i)=>{
+            const ci=dados.reduce((s,x)=>s+(x.carga_interna_ua||0),0);
+            const ant=i>0?semArr[i-1][1].reduce((s,x)=>s+(x.carga_interna_ua||0),0):null;
+            const vr=ant&&ant>0?Math.round(((ci-ant)/ant)*100):null;
+            const dur=dados.reduce((s,x)=>s+(x.duracao_minutos||0),0);
+            return `<tr style="border-bottom:1px solid #1a1a1a">
+              <td style="padding:12px 16px;color:#e8e8e8">${esc(sem)}</td>
+              <td style="padding:12px 16px;text-align:center;color:#aaa">${dados.length}</td>
+              <td style="padding:12px 16px;text-align:center;color:#aaa">${dur} min</td>
+              <td style="padding:12px 16px;text-align:center;font-weight:700;color:#60a5fa">${ci} UA</td>
+              <td style="padding:12px 16px;text-align:center">${vr!==null?`<span style="color:${vr>20?'#f87171':vr>0?'#f59e0b':vr<-20?'#60a5fa':'#34d399'}">${vr>0?'+':''}${vr}%</span>`:'<span style="color:#666">—</span>'}</td>
+            </tr>`;}).join('')}</tbody>
+        </table>
+      </div>`:'<div class="fe-card" style="color:#666;text-align:center;padding:24px">Sem dados.</div>'}
+      <div style="margin-top:16px;padding:12px 16px;background:#1a1a1a;border-radius:8px;font-size:.78rem;color:#666;border-left:3px solid #333">
+        <strong style="color:#888">Interpretação clínica:</strong> Variações de carga são dados de contexto. Avalie em conjunto com o histórico e resposta do paciente. Não use como preditor automático de lesão. (Impellizzeri et al. 2020)
+      </div>
+    </div>`;
+  }catch(e){c.innerHTML=`<div style="color:#f87171;padding:20px">${esc(e.message)}</div>`;}
+}
+
+function feAgruparSemanas(sessoes){
+  const g={};
+  sessoes.forEach(s=>{
+    const d=new Date(s.data_sessao+'T12:00:00'),dy=d.getDay();
+    const seg=new Date(d);seg.setDate(d.getDate()-dy+(dy===0?-6:1));
+    const dom=new Date(seg);dom.setDate(dom.getDate()+6);
+    const k=`${seg.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})} – ${dom.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}`;
+    if(!g[k]) g[k]=[];g[k].push(s);
+  });
+  return g;
+}
+
+function feRenderSemAtual(sessoes){
+  const hoje=new Date(),dy=hoje.getDay();
+  const seg=new Date(hoje);seg.setDate(hoje.getDate()-dy+(dy===0?-6:1));
+  const dias=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+  const sessSem=sessoes.filter(s=>{
+    const d=new Date(s.data_sessao+'T12:00:00');
+    return d>=seg&&d<=hoje;
+  });
+  const ci=sessSem.reduce((s,x)=>s+(x.carga_interna_ua||0),0);
+  const dur=sessSem.reduce((s,x)=>s+(x.duracao_minutos||0),0);
+  return `<div class="fe-carga-semana">
+    ${Array.from({length:7},(_,i)=>{
+      const dd=new Date(seg);dd.setDate(seg.getDate()+i);
+      const ds=dd.toISOString().split('T')[0];
+      const sd=sessSem.filter(s=>s.data_sessao===ds);
+      const c=sd.reduce((s,x)=>s+(x.carga_interna_ua||0),0);
+      const ih=ds===hoje.toISOString().split('T')[0];
+      return `<div class="fe-carga-dia" style="${ih?'border:1px solid #2563eb;':''}" title="${sd.length?sd.map(s=>s.tipo_sessao).join(', '):''}">
+        <div class="dia-nome">${dias[i]}</div>
+        <div class="dia-ua" style="color:${c>300?'#f87171':c>150?'#f59e0b':c>0?'#34d399':'#333'}">${c||'—'}</div>
+      </div>`;}).join('')}
+  </div>
+  <div class="fe-row" style="margin-top:16px;font-size:.88rem">
+    <div class="fe-col"><span class="fe-label">Sessões</span><div style="font-size:1.3rem;font-weight:700;color:#60a5fa">${sessSem.length}</div></div>
+    <div class="fe-col"><span class="fe-label">Duração total</span><div style="font-size:1.3rem;font-weight:700;color:#a78bfa">${dur} min</div></div>
+    <div class="fe-col"><span class="fe-label">Carga interna</span><div style="font-size:1.3rem;font-weight:700;color:${ci>1500?'#f87171':ci>800?'#f59e0b':'#34d399'}">${ci} UA</div></div>
+  </div>`;
+}
+
+/* ---- ABA EVOLUÇÃO ---- */
+async function feRenderEvolucao(){
+  const c=document.getElementById('fe-aba-content');
+  try{
+    const[sessoes,avals,atRec]=await Promise.all([
+      feApi('fisio_treino_sessoes',{filters:[`episodio_id=eq.${feState.episodioId}`],order:'data_sessao.asc'}),
+      feApi('fisio_avaliacoes',{filters:[`episodio_id=eq.${feState.episodioId}`],order:'created_at.desc'}),
+      feApi('fisio_atleta',{filters:[`episodio_id=eq.${feState.episodioId}`]})
+    ]);
+    const testes=atRec[0]?JSON.parse(atRec[0].testes_realizados||'[]'):[];
+    c.innerHTML=`<div style="margin-top:16px">
+      <div class="fe-section-title"><i class="ti ti-timeline"></i> Linha do Tempo</div>
+      <div class="fe-timeline">
+        ${avals.map(a=>{const st=JSON.parse(a.sintese||'{}');return `<div class="fe-tl-item">
+          <div class="fe-tl-dot" style="background:#2563eb"></div>
+          <div class="fe-tl-date">${feDataBr(a.created_at)}</div>
+          <div class="fe-tl-title">Avaliação Ortopédica</div>
+          ${st.diagnostico_fisio?`<div class="fe-tl-sub">${esc(st.diagnostico_fisio)}</div>`:''}
+        </div>`;}).join('')}
+        ${sessoes.map(s=>`<div class="fe-tl-item">
+          <div class="fe-tl-dot" style="background:${s.pse_sessao>=8?'#f87171':s.pse_sessao>=6?'#f59e0b':'#34d399'}"></div>
+          <div class="fe-tl-date">${feDataBr(s.data_sessao)}</div>
+          <div class="fe-tl-title">${esc(s.tipo_sessao||'Sessão')} · PSE ${s.pse_sessao||'—'} · ${s.carga_interna_ua||'—'} UA</div>
+          ${s.resposta_dia_seguinte?`<div class="fe-tl-sub">D+1: ${esc(s.resposta_dia_seguinte)}</div>`:''}
+        </div>`).join('')}
+        ${!avals.length&&!sessoes.length?'<div style="color:#666">Nenhum registro.</div>':''}
+      </div>
+      ${testes.length?`<div class="fe-section-title" style="margin-top:20px"><i class="ti ti-ruler"></i> Resultados dos Testes</div>
+      <div class="fe-card">${testes.slice(0,10).map(t=>{
+        const vd=parseFloat(t.valor_d),ve=parseFloat(t.valor_e);
+        const is=(vd&&ve)?feSimIndex(Math.min(vd,ve),Math.max(vd,ve)):null;
+        return `<div style="display:flex;align-items:center;gap:12px;padding:10px;border-bottom:1px solid #1a1a1a">
+          <div style="flex:1"><div style="font-weight:600;font-size:.88rem">${esc(t.nome_teste||'—')}</div>
+          <div style="font-size:.75rem;color:#888">${feDataBr(t.data)}</div></div>
+          ${t.valor_d?`<span style="color:#60a5fa;font-weight:700">D:${t.valor_d}<span style="font-size:.7rem;color:#888"> ${t.unidade||''}</span></span>`:''}
+          ${t.valor_e?`<span style="color:#a78bfa;font-weight:700">E:${t.valor_e}<span style="font-size:.7rem;color:#888"> ${t.unidade||''}</span></span>`:''}
+          ${is!==null?`<span class="fe-badge" style="background:${is>=90?'#064e3b':is>=75?'#78350f':'#7f1d1d'};color:#fff">IS:${is}%</span>`:''}
+        </div>`;}).join('')}</div>`:''}
+    </div>`;
+  }catch(e){c.innerHTML=`<div style="color:#f87171;padding:20px">${esc(e.message)}</div>`;}
+}
+
+/* ---- MODAIS: NOVO PRONTUÁRIO + EPISÓDIO ---- */
+async function abrirModalNovoProntuario(){
+  let alunos=[],pacientes=[];
+  try{[alunos,pacientes]=await Promise.all([feApi('alunos',{select:'id,nome'}),feApi('pacientes',{select:'id,nome'})]);}catch(_){}
+  window._feAlunos=alunos;window._fePacientes=pacientes;
+  document.getElementById('fe-modal-container').innerHTML=`
+    <div class="fe-modal-bg" onclick="if(event.target===this)this.remove()">
+      <div class="fe-modal">
+        <div class="fe-modal-title"><i class="ti ti-user-plus"></i> Novo Prontuário</div>
+        <div style="margin-bottom:12px"><label class="fe-label">Tipo de paciente</label>
+          <select class="fe-select" id="np-tp" onchange="feToggleTipo(this.value)">
+            <option value="externo">Paciente externo (cadastrar agora)</option>
+            ${alunos.length?'<option value="aluno">Aluno do estúdio</option>':''}
+            ${pacientes.length?'<option value="paciente">Paciente de fisio</option>':''}
+          </select></div>
+        <div id="np-ref" style="display:none;margin-bottom:12px"><label class="fe-label">Selecionar</label>
+          <select class="fe-select" id="np-ref-id"><option value="">Selecionar...</option></select></div>
+        <div id="np-ext">
+          <div class="fe-row" style="margin-bottom:12px">
+            <div class="fe-col"><label class="fe-label">Nome completo *</label><input class="fe-input" id="np-nm"></div>
+          </div>
+          <div class="fe-row" style="margin-bottom:12px">
+            <div class="fe-col"><label class="fe-label">Nascimento</label><input class="fe-input" id="np-dn" type="date"></div>
+            <div class="fe-col"><label class="fe-label">Profissão</label><input class="fe-input" id="np-pf"></div>
+          </div>
+          <div class="fe-row" style="margin-bottom:12px">
+            <div class="fe-col"><label class="fe-label">Telefone</label><input class="fe-input" id="np-tel"></div>
+            <div class="fe-col"><label class="fe-label">E-mail</label><input class="fe-input" id="np-em" type="email"></div>
+          </div>
+          <div class="fe-row" style="margin-bottom:12px">
+            <div class="fe-col"><label class="fe-label">Dominância</label>
+              <select class="fe-select" id="np-dom">${['','Destro','Canhoto','Ambidestro'].map(n=>`<option>${n}</option>`).join('')}</select></div>
+          </div>
+          <div style="margin-bottom:12px"><label class="fe-label">Observações</label><textarea class="fe-textarea" id="np-obs" rows="2"></textarea></div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="fe-btn fe-btn-ghost" onclick="document.getElementById('fe-modal-container').innerHTML=''">Cancelar</button>
+          <button class="fe-btn fe-btn-primary" id="np-btn" onclick="feCriarPront()"><i class="ti ti-user-plus"></i> Criar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function feToggleTipo(t){
+  document.getElementById('np-ext').style.display=t==='externo'?'block':'none';
+  document.getElementById('np-ref').style.display=t!=='externo'?'block':'none';
+  if(t!=='externo'){
+    const lst=t==='aluno'?window._feAlunos:window._fePacientes;
+    document.getElementById('np-ref-id').innerHTML='<option value="">Selecionar...</option>'+(lst||[]).map(x=>`<option value="${x.id}">${esc(x.nome)}</option>`).join('');
+  }
+}
+
+async function feCriarPront(){
+  const btn=document.getElementById('np-btn');
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i> Criando...';
+  try{
+    const t=document.getElementById('np-tp')?.value||'externo';
+    let p={ref_tipo:t};
+    if(t==='externo'){
+      const nm=document.getElementById('np-nm')?.value?.trim();
+      if(!nm){alert('Nome obrigatório.');btn.disabled=false;btn.innerHTML='<i class="ti ti-user-plus"></i> Criar';return;}
+      p.nome_display=nm;p.ext_data_nascimento=document.getElementById('np-dn')?.value||null;p.ext_profissao=document.getElementById('np-pf')?.value||null;p.ext_telefone=document.getElementById('np-tel')?.value||null;p.ext_email=document.getElementById('np-em')?.value||null;p.ext_dominancia=document.getElementById('np-dom')?.value||null;p.observacoes=document.getElementById('np-obs')?.value||null;
+    }else{
+      const rid=document.getElementById('np-ref-id')?.value;
+      if(!rid){alert('Selecione um '+(t==='aluno'?'aluno':'paciente')+'.');btn.disabled=false;btn.innerHTML='<i class="ti ti-user-plus"></i> Criar';return;}
+      p.ref_id=rid;const lst=t==='aluno'?window._feAlunos:window._fePacientes;const ref=lst?.find(x=>x.id==rid);p.nome_display=ref?.nome||'Sem nome';
+    }
+    const r=await feApi('fisio_prontuarios',{method:'POST',body:p});
+    document.getElementById('fe-modal-container').innerHTML='';
+    if(r&&r[0]?.id) await feAbrirPront(r[0].id);
+    else await navFEsportiva();
+  }catch(e){btn.disabled=false;btn.innerHTML='<i class="ti ti-user-plus"></i> Criar';alert('Erro: '+e.message);}
+}
+
+async function abrirModalNovoEpisodio(prontuarioId){
+  document.getElementById('fe-modal-container').innerHTML=`
+    <div class="fe-modal-bg" onclick="if(event.target===this)this.remove()">
+      <div class="fe-modal">
+        <div class="fe-modal-title"><i class="ti ti-plus"></i> Novo Episódio</div>
+        <div style="margin-bottom:12px"><label class="fe-label">Título *</label><input class="fe-input" id="ep-tt" placeholder="ex: Lombalgia, Lesão no joelho..."></div>
+        <div class="fe-row" style="margin-bottom:12px">
+          <div class="fe-col"><label class="fe-label">Data de abertura</label><input class="fe-input" id="ep-dt" type="date" value="${feHoje()}"></div>
+        </div>
+        <div style="margin-bottom:12px"><label class="fe-label">Queixa inicial</label><textarea class="fe-textarea" id="ep-qi" rows="2"></textarea></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="fe-btn fe-btn-ghost" onclick="document.getElementById('fe-modal-container').innerHTML=''">Cancelar</button>
+          <button class="fe-btn fe-btn-green" id="ep-btn" onclick="feCriarEpisodio('${prontuarioId}')"><i class="ti ti-check"></i> Criar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function feCriarEpisodio(prontuarioId){
+  const btn=document.getElementById('ep-btn');
+  btn.disabled=true;btn.innerHTML='<i class="ti ti-loader"></i>';
+  try{
+    const tt=document.getElementById('ep-tt')?.value?.trim();
+    if(!tt){alert('Título obrigatório.');btn.disabled=false;btn.innerHTML='<i class="ti ti-check"></i> Criar';return;}
+    const r=await feApi('fisio_episodios',{method:'POST',body:{prontuario_id:prontuarioId,titulo:tt,data_abertura:document.getElementById('ep-dt')?.value||feHoje(),status:'aberto',queixa_inicial:document.getElementById('ep-qi')?.value||null}});
+    document.getElementById('fe-modal-container').innerHTML='';
+    if(r&&r[0]?.id) await feAbrirEpisodio(r[0].id,prontuarioId);
+    else await feAbrirPront(prontuarioId);
+  }catch(e){btn.disabled=false;btn.innerHTML='<i class="ti ti-check"></i> Criar';alert('Erro: '+e.message);}
+}
+
+async function feFecharEpisodio(id,prontuarioId){
+  if(!confirm('Fechar este episódio?')) return;
+  try{
+    await feApi('fisio_episodios',{method:'PATCH',body:{status:'fechado',data_fechamento:feHoje()},filters:[`id=eq.${id}`]});
+    await feAbrirPront(prontuarioId||feState.prontuarioId);
+  }catch(e){alert('Erro: '+e.message);}
+}
+
+/* FIM DO MÓDULO FISIOTERAPIA ESPORTIVA */
 </script>
 
 
