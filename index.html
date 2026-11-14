@@ -7675,6 +7675,14 @@ input[type=range].fe-range::-webkit-slider-runnable-track{height:6px;border-radi
 .fe-fab{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom));right:calc(20px + env(safe-area-inset-right));width:56px;height:56px;border-radius:50%;background:#2563eb;color:#fff;border:none;font-size:1.5rem;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(37,99,235,.5);z-index:200;cursor:pointer}
 .fe-fab:active{transform:scale(.92)}
 
+/* ── BOTTOM NAV (estilo Instagram) ──────────────────────── */
+.fe-bottom-nav{position:fixed;bottom:0;left:0;right:0;height:calc(60px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);background:#0d0d0d;border-top:1px solid #1f1f1f;display:flex;align-items:stretch;z-index:300;-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
+.fe-bnav-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:none;background:transparent;color:#444;font-size:.62rem;font-weight:700;letter-spacing:.03em;cursor:pointer;padding:0;-webkit-appearance:none;text-transform:uppercase;transition:color .15s}
+.fe-bnav-btn i{font-size:1.4rem;line-height:1}
+.fe-bnav-btn span{font-size:.6rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.fe-bnav-btn.act{color:#2563eb}
+.fe-bnav-btn:active{opacity:.6}
+
 /* ── NUMERO GRANDE ───────────────────────────────────────── */
 .fe-big-num{font-size:3rem;font-weight:800;line-height:1;letter-spacing:-.04em}
 </style>
@@ -7768,25 +7776,30 @@ function feRenderAbas(aba){
   _feAbaAtiva = aba;
   const abas = [
     {id:'prontuarios', icon:'ti-clipboard-list', label:'Prontuários'},
-    {id:'alunos_pilates', icon:'ti-yoga', label:'Alunos Pilates'},
-    {id:'pacientes_fisio', icon:'ti-stethoscope', label:'Pacientes Fisio'},
+    {id:'alunos_pilates', icon:'ti-yoga', label:'Pilates'},
+    {id:'pacientes_fisio', icon:'ti-stethoscope', label:'Pacientes'},
   ];
-  return `<div class="fe-tabs" style="margin-bottom:0;padding:0 24px;background:#0d0d0d">
-    ${abas.map(a=>`<button class="fe-tab ${aba===a.id?'act':''}" onclick="feAbrirAba('${a.id}')">
-      <i class="ti ${a.icon}" style="margin-right:5px"></i>${a.label}
+  return `<div class="fe-bottom-nav" id="fe-bottom-nav">
+    ${abas.map(a=>`<button class="fe-bnav-btn ${aba===a.id?'act':''}" onclick="feAbrirAba('${a.id}')">
+      <i class="ti ${a.icon}"></i><span>${a.label}</span>
     </button>`).join('')}
   </div>`;
 }
 
 async function feAbrirAba(aba){
   _feAbaAtiva = aba;
-  // atualiza tabs
-  document.querySelectorAll('.fe-tab').forEach(t=>{
+  document.querySelectorAll('.fe-bnav-btn').forEach(t=>{
     t.classList.toggle('act', t.onclick?.toString().includes(`'${aba}'`));
   });
+  // Atualiza label e botão no header
+  const labels = {prontuarios:'Prontuários', alunos_pilates:'Alunos Pilates', pacientes_fisio:'Pacientes Fisio'};
+  const lbl = document.getElementById('fe-aba-label');
+  if(lbl) lbl.textContent = labels[aba]||'';
+  const btnNovo = document.getElementById('fe-btn-novo');
+  if(btnNovo) btnNovo.style.display = aba==='prontuarios' ? '' : 'none';
   const cont = document.getElementById('fe-aba-conteudo');
   if(!cont) return;
-  cont.innerHTML = '<div style="color:#888;padding:30px;text-align:center"><i class="ti ti-loader"></i> Carregando...</div>';
+  cont.innerHTML = '<div class="fe-spinner"><div class="fe-spin"></div> Carregando...</div>';
   if(aba==='prontuarios') await feCarregarDashboard();
   else if(aba==='alunos_pilates') await feRenderAlunosPilates();
   else if(aba==='pacientes_fisio') await feRenderPacientesFisio();
@@ -7799,12 +7812,11 @@ async function navFEsportiva(){
     <div class="fe-header">
       <div style="flex:1;min-width:0">
         <div class="fe-title"><i class="ti ti-run" style="color:#2563eb"></i> Fisio Esportiva</div>
-        <div class="fe-subtitle">Avaliação e acompanhamento</div>
+        <div class="fe-subtitle" id="fe-aba-label">Prontuários</div>
       </div>
-      <button class="fe-btn fe-btn-primary fe-btn-sm" onclick="abrirModalNovoProntuario()" style="flex-shrink:0"><i class="ti ti-plus"></i> <span style="display:none;display:inline-block">Novo</span></button>
+      <button class="fe-btn fe-btn-primary fe-btn-sm" id="fe-btn-novo" onclick="abrirModalNovoProntuario()" style="flex-shrink:0"><i class="ti ti-plus"></i> Novo</button>
     </div>
-    ${feRenderAbas('prontuarios')}
-    <div class="fe-stats-row">
+    <div class="fe-stats-row" id="fe-stats-row">
       <div class="fe-card">
         <div class="fe-card-title">Prontuários</div>
         <div id="fe-stat-total" class="fe-card-num" style="color:#60a5fa">—</div>
@@ -7826,13 +7838,14 @@ async function navFEsportiva(){
         <div class="fe-card-sub">sessões</div>
       </div>
     </div>
-    <div id="fe-aba-conteudo" class="fe-body">
+    <div id="fe-aba-conteudo" class="fe-body" style="padding-bottom:calc(80px + env(safe-area-inset-bottom))">
       <div class="fe-search-wrap">
         <span class="fe-search-icon"><i class="ti ti-search"></i></span>
         <input class="fe-input" id="fe-busca" placeholder="Buscar prontuário..." oninput="feBuscar(this.value)" autocomplete="off" autocorrect="off" spellcheck="false">
       </div>
       <div id="fe-lista-prontuarios"><div class="fe-spinner"><div class="fe-spin"></div> Carregando...</div></div>
     </div>
+    ${feRenderAbas('prontuarios')}
   </div>
   <div id="fe-modal-container"></div>`);
   await feCarregarDashboard();
@@ -7850,7 +7863,7 @@ async function feCarregarDashboard(){
       <div id="fe-lista-prontuarios"><div class="fe-spinner"><div class="fe-spin"></div> Carregando...</div></div>`;
   }
   // atualiza tabs
-  document.querySelectorAll('.fe-tab').forEach(t=>{
+  document.querySelectorAll('.fe-bnav-btn').forEach(t=>{
     t.classList.toggle('act', t.onclick?.toString().includes("'prontuarios'"));
   });
   try{
@@ -8040,22 +8053,29 @@ async function feAbrirEpisodio(episodioId,prontuarioId){
       <button class="fe-btn fe-btn-ghost fe-btn-sm" onclick="feAbrirPront('${feState.prontuarioId}')" style="padding:0 12px"><i class="ti ti-arrow-left"></i></button>
       <div style="flex:1;min-width:0">
         <div class="fe-title" id="fe-epi-bread" style="font-size:1rem">Episódio</div>
-        <div class="fe-subtitle">Fisioterapia Esportiva</div>
+        <div class="fe-subtitle" id="fe-epi-sub">Fisioterapia Esportiva</div>
       </div>
     </div>
     <div class="fe-tabs" id="fe-episode-tabs">
-      <button class="fe-tab act" data-tab="ortopedica" onclick="feTrocarAba('ortopedica')"><i class="ti ti-stethoscope"></i> Avaliação</button>
-      <button class="fe-tab" data-tab="atleta" onclick="feTrocarAba('atleta')"><i class="ti ti-trophy"></i> RTS</button>
-      <button class="fe-tab" data-tab="forca" onclick="feTrocarAba('forca')"><i class="ti ti-barbell"></i> Força</button>
-      <button class="fe-tab" data-tab="carga" onclick="feTrocarAba('carga')"><i class="ti ti-chart-bar"></i> Carga</button>
+      <button class="fe-tab act" data-tab="ortopedica" onclick="feTrocarAba('ortopedica')"><i class="ti ti-stethoscope"></i> Clínico</button>
+      <button class="fe-tab" data-tab="fisico" onclick="feTrocarAba('fisico')"><i class="ti ti-barbell"></i> Físico</button>
       <button class="fe-tab" data-tab="evolucao" onclick="feTrocarAba('evolucao')"><i class="ti ti-timeline"></i> Evolução</button>
     </div>
     <div id="fe-aba-content" class="fe-body"><div class="fe-spinner"><div class="fe-spin"></div> Carregando...</div></div>
     <div id="fe-modal-container"></div>
   </div>`);
   try{
-    const r=await feApi('fisio_episodios',{filters:[`id=eq.${episodioId}`]});
-    const e=r[0];if(e) document.getElementById('fe-epi-bread').textContent=e.titulo||'Episódio';
+    const[rEpi,rPront]=await Promise.all([
+      feApi('fisio_episodios',{filters:[`id=eq.${episodioId}`]}),
+      feState.prontuarioId ? feApi('fisio_prontuarios',{filters:[`id=eq.${feState.prontuarioId}`],select:'nome_display'}) : Promise.resolve([])
+    ]);
+    const e=rEpi[0];
+    const pNome=rPront[0]?.nome_display||'';
+    if(e){
+      document.getElementById('fe-epi-bread').textContent=e.titulo||'Episódio';
+      const sub=document.getElementById('fe-epi-sub');
+      if(sub) sub.textContent=pNome ? pNome+' · '+feStatusBadge(e.status).replace(/<[^>]+>/g,'') : feDataBr(e.data_abertura)||'';
+    }
   }catch(_){}
   await feTrocarAba('ortopedica');
 }
@@ -8074,10 +8094,12 @@ async function feTrocarAba(aba){
   const c=document.getElementById('fe-aba-content');
   c.innerHTML='<div class="fe-spinner"><div class="fe-spin"></div> Carregando...</div>';
   if(aba==='ortopedica') await feRenderOrtopedica();
+  else if(aba==='fisico') await feRenderFisico();
+  else if(aba==='evolucao') await feRenderEvolucao();
+  // compat aliases
   else if(aba==='atleta') await feRenderAtleta();
   else if(aba==='forca') await feRenderForca();
   else if(aba==='carga') await feRenderCarga();
-  else if(aba==='evolucao') await feRenderEvolucao();
 }
 
 /* ---- ABA ORTOPÉDICA ---- */
@@ -8140,13 +8162,16 @@ async function feFormAvaliacao(avId){
   const trg=JSON.parse(av.triagem||'{}');
   const ef=JSON.parse(av.exame_fisico||'{}');
   const st=JSON.parse(av.sintese||'{}');
-  c.innerHTML=`<div style="margin-top:16px">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
-      <button class="fe-btn fe-btn-ghost fe-btn-sm" onclick="feTrocarAba('ortopedica')"><i class="ti ti-arrow-left"></i> Voltar</button>
-      <div class="fe-section-title" style="margin:0">${(avId&&avId!=='null')?'Editar':'Nova'} Avaliação Ortopédica</div>
+  c.innerHTML=`<div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <button class="fe-btn fe-btn-ghost fe-btn-sm" onclick="feTrocarAba('ortopedica')"><i class="ti ti-arrow-left"></i></button>
+      <div style="font-size:.95rem;font-weight:700;color:#e8e8e8">${(avId&&avId!=='null')?'Editar':'Nova'} Avaliação</div>
     </div>
-    <div class="fe-card">
-      <div class="fe-card-title">1. Anamnese</div>
+    <details open class="fe-card" style="margin-bottom:12px">
+      <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;min-height:36px">
+        <span class="fe-card-title" style="margin:0">1. Anamnese ${an.queixa_principal?'<span style="color:#34d399">✓</span>':''}</span>
+        <i class="ti ti-chevron-down" style="color:#555"></i>
+      </summary>
       <div class="fe-row">
         <div class="fe-col"><label class="fe-label">Queixa principal *</label>
           <textarea class="fe-textarea" id="a-queixa" rows="2">${esc(an.queixa_principal||'')}</textarea></div>
@@ -8178,8 +8203,13 @@ async function feFormAvaliacao(avId){
           <textarea class="fe-textarea" id="a-obj" rows="2">${esc(an.objetivos||'')}</textarea></div>
       </div>
     </div>
-    <div class="fe-card">
-      <div class="fe-card-title">2. PSFS — Escala Funcional Específica</div>
+    </details>
+    <details class="fe-card" style="margin-bottom:12px">
+      <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;min-height:36px">
+        <span class="fe-card-title" style="margin:0">2. PSFS ${psfs.some(p=>p.atividade)?'<span style="color:#34d399">✓</span>':''}</span>
+        <i class="ti ti-chevron-down" style="color:#555"></i>
+      </summary>
+      <div class="fe-rm-label" style="margin-bottom:12px">3–5 atividades (0=incapaz · 10=normal)</div>
       <div style="font-size:.82rem;color:#888;margin-bottom:12px">3–5 atividades relevantes. Pontuação 0 (incapaz) a 10 (normal).</div>
       ${Array.from({length:4},(_,i)=>`
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
@@ -8190,9 +8220,12 @@ async function feFormAvaliacao(avId){
             ${['','Repouso','Exercício','Manhã seguinte','Trabalho','Lazer'].map(c=>`<option${psfs[i]?.contexto===c?' selected':''}>${c}</option>`).join('')}
           </select>
         </div>`).join('')}
-    </div>
-    <div class="fe-card">
-      <div class="fe-card-title">3. Triagem Clínica</div>
+    </details>
+    <details class="fe-card" style="margin-bottom:12px">
+      <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;min-height:36px">
+        <span class="fe-card-title" style="margin:0">3. Triagem Clínica ${trg.decisao_clinica?'<span style="color:#34d399">✓</span>':''}</span>
+        <i class="ti ti-chevron-down" style="color:#555"></i>
+      </summary>
       <div class="fe-row">
         <div class="fe-col"><label class="fe-label">Sinais de alerta</label>
           <textarea class="fe-textarea" id="a-rf" rows="2">${esc(trg.red_flags||'')}</textarea></div>
@@ -8205,9 +8238,12 @@ async function feFormAvaliacao(avId){
         <div class="fe-col"><label class="fe-label">Encaminhamento</label>
           <textarea class="fe-textarea" id="a-enc" rows="2">${esc(trg.encaminhamento||'')}</textarea></div>
       </div>
-    </div>
-    <div class="fe-card">
-      <div class="fe-card-title">4. Exame Físico</div>
+    </details>
+    <details class="fe-card" style="margin-bottom:12px">
+      <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;min-height:36px">
+        <span class="fe-card-title" style="margin:0">4. Exame Físico ${ef.adm_ativa?'<span style="color:#34d399">✓</span>':''}</span>
+        <i class="ti ti-chevron-down" style="color:#555"></i>
+      </summary>
       <div class="fe-row" style="margin-bottom:12px">
         <div class="fe-col"><label class="fe-label">Região</label>
           <select class="fe-select" id="a-ef-reg">${['','Cervical','Torácica','Lombar','Ombro','Cotovelo','Punho/Mão','Quadril','Joelho','Tornozelo/Pé'].map(r=>`<option${ef.regiao===r?' selected':''}>${r}</option>`).join('')}</select></div>
@@ -8230,9 +8266,12 @@ async function feFormAvaliacao(avId){
         <div class="fe-col"><label class="fe-label">Observações</label>
           <textarea class="fe-textarea" id="a-obs" rows="2">${esc(ef.observacoes||'')}</textarea></div>
       </div>
-    </div>
-    <div class="fe-card">
-      <div class="fe-card-title">5. Síntese e Plano</div>
+    </details>
+    <details open class="fe-card" style="margin-bottom:12px">
+      <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;min-height:36px">
+        <span class="fe-card-title" style="margin:0">5. Síntese e Plano ${st.diagnostico_fisio?'<span style="color:#34d399">✓</span>':''}</span>
+        <i class="ti ti-chevron-down" style="color:#555"></i>
+      </summary>
       <div class="fe-row">
         <div class="fe-col"><label class="fe-label">Diagnóstico fisioterapêutico *</label>
           <textarea class="fe-textarea" id="a-diag" rows="2">${esc(st.diagnostico_fisio||'')}</textarea></div>
@@ -8251,11 +8290,11 @@ async function feFormAvaliacao(avId){
         <div class="fe-col"><label class="fe-label">Data de reavaliação</label>
           <input class="fe-input" id="a-reav" type="date" value="${st.data_reavaliacao||''}"></div>
       </div>
-    </div>
-    <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:4px;padding-bottom:32px">
+    </details>
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;margin-top:4px;padding-bottom:32px">
       <button class="fe-btn fe-btn-ghost" onclick="feTrocarAba('ortopedica')">Cancelar</button>
       <button class="fe-btn fe-btn-primary" id="fe-btn-sav" onclick="feSalvarAv('${(avId&&avId!=='null')?avId:''}')">
-        <i class="ti ti-device-floppy"></i> Salvar
+        <i class="ti ti-device-floppy"></i> Salvar Avaliação
       </button>
     </div>
   </div>`;
@@ -8285,6 +8324,104 @@ async function feSalvarAv(id){
     if(diag&&feState.episodioId) await feApi('fisio_episodios',{method:'PATCH',body:{diagnostico_fisio:diag},filters:[`id=eq.${feState.episodioId}`]});
     await feTrocarAba('ortopedica');
   }catch(e){btn.disabled=false;btn.innerHTML='<i class="ti ti-device-floppy"></i> Salvar';alert('Erro: '+e.message);}
+}
+
+/* ---- ABA FÍSICO (Força + Carga + RTS combinados) ---- */
+async function feRenderFisico(){
+  const c=document.getElementById('fe-aba-content');
+  c.innerHTML='<div class="fe-spinner"><div class="fe-spin"></div> Carregando...</div>';
+  try{
+    const[sessoes,atleta,hist]=await Promise.all([
+      feApi('fisio_treino_sessoes',{filters:[`episodio_id=eq.${feState.episodioId}`],order:'data_sessao.desc',limit:30}),
+      feApi('fisio_atleta',{filters:[`episodio_id=eq.${feState.episodioId}`]}),
+      feApi('fisio_rm_historico',{filters:[`episodio_id=eq.${feState.episodioId}`],order:'data_registro.desc',limit:20})
+    ]);
+    const at=atleta[0]||null;
+    // Carga últimas 4 semanas
+    const ultSessoes=sessoes.slice(0,7);
+    const totalUA=sessoes.slice(0,7).reduce((s,x)=>s+(x.carga_interna||0),0);
+    const mediaUA=sessoes.length?Math.round(totalUA/Math.min(sessoes.length,7)):0;
+    // Exercícios 1RM únicos
+    const exMap={};hist.forEach(h=>{if(!exMap[h.exercicio]) exMap[h.exercicio]=h;});
+    const exList=Object.values(exMap).slice(0,6);
+    c.innerHTML=`
+      <!-- CARGA SEMANAL -->
+      <details open>
+        <summary class="fe-section-title" style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between">
+          <span><i class="ti ti-chart-bar"></i> Carga Semanal</span>
+          <span style="font-size:.75rem;color:#555;font-weight:400">▾</span>
+        </summary>
+        <div style="margin-bottom:4px">
+          <div style="display:flex;gap:12px;margin-bottom:14px">
+            <div class="fe-card" style="flex:1;text-align:center;padding:14px 10px">
+              <div class="fe-card-title">Sessões (7d)</div>
+              <div class="fe-card-num" style="color:#60a5fa;font-size:1.8rem">${sessoes.filter(s=>{ const d=new Date(s.data_sessao);return(new Date()-d)/864e5<=7;}).length}</div>
+            </div>
+            <div class="fe-card" style="flex:1;text-align:center;padding:14px 10px">
+              <div class="fe-card-title">Média UA</div>
+              <div class="fe-card-num" style="color:#a78bfa;font-size:1.8rem">${mediaUA}</div>
+            </div>
+            <div class="fe-card" style="flex:1;text-align:center;padding:14px 10px">
+              <div class="fe-card-title">Total UA</div>
+              <div class="fe-card-num" style="color:#34d399;font-size:1.8rem">${totalUA}</div>
+            </div>
+          </div>
+          <div style="margin-bottom:16px">
+            ${ultSessoes.length?ultSessoes.map(s=>`
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                <div style="width:70px;font-size:.75rem;color:#555;flex-shrink:0">${feDataBr(s.data_sessao)}</div>
+                <div style="flex:1;background:#1a1a1a;border-radius:4px;height:24px;overflow:hidden;position:relative">
+                  <div style="height:100%;width:${Math.min(100,(s.carga_interna||0)/10)}%;background:${(s.carga_interna||0)>=600?'#dc2626':(s.carga_interna||0)>=400?'#d97706':'#2563eb'};border-radius:4px;transition:width .3s"></div>
+                  <span style="position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:.72rem;color:#ccc;font-weight:600">${esc(s.tipo||'—')} · UA ${s.carga_interna||'—'}</span>
+                </div>
+              </div>`).join(''):'<div style="color:#555;font-size:.85rem;padding:12px 0">Nenhuma sessão registrada.</div>'}
+          </div>
+          <button class="fe-btn fe-btn-ghost fe-btn-sm fe-btn-full" onclick="feTrocarAba('carga')">Ver todas as sessões →</button>
+        </div>
+      </details>
+      <hr class="fe-sep">
+      <!-- FORÇA / 1RM -->
+      <details open>
+        <summary class="fe-section-title" style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between">
+          <span><i class="ti ti-barbell"></i> Força — 1RM</span>
+          <span style="font-size:.75rem;color:#555;font-weight:400">▾</span>
+        </summary>
+        <div style="margin-bottom:4px">
+          ${exList.length?`<div class="fe-grid2" style="margin-bottom:12px">
+            ${exList.map(h=>`<div class="fe-rm-result" style="padding:12px">
+              <div style="font-size:.7rem;color:#555;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${esc(h.exercicio)}</div>
+              <div class="fe-rm-value" style="font-size:1.6rem">${h.rm_calculado??h.peso_kg}kg</div>
+              <div class="fe-rm-label">${feDataBr(h.data_registro)}</div>
+            </div>`).join('')}
+          </div>`:'<div style="color:#555;font-size:.85rem;padding:8px 0">Nenhum teste de força.</div>'}
+          <button class="fe-btn fe-btn-ghost fe-btn-sm fe-btn-full" onclick="feTrocarAba('forca')">Novo teste de força →</button>
+        </div>
+      </details>
+      ${at?`<hr class="fe-sep">
+      <!-- RTS -->
+      <details>
+        <summary class="fe-section-title" style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between">
+          <span><i class="ti ti-trophy"></i> Retorno ao Esporte (RTS)</span>
+          <span style="font-size:.75rem;color:#555;font-weight:400">▾</span>
+        </summary>
+        <div style="margin-bottom:4px">
+          <div class="fe-card" style="margin-bottom:12px">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:10px">
+              <div>
+                <div style="font-size:.8rem;color:#666">Modalidade</div>
+                <div style="font-weight:700;color:#fff">${esc(at.modalidade||'—')}</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-size:.8rem;color:#666">Fase atual</div>
+                <div style="font-weight:700;color:#60a5fa">${at.fase_rts??'—'}/6</div>
+              </div>
+            </div>
+            <div class="fe-chart-bar"><div class="fe-chart-fill" style="width:${((at.fase_rts||0)/6)*100}%;background:#2563eb"></div></div>
+          </div>
+          <button class="fe-btn fe-btn-ghost fe-btn-sm fe-btn-full" onclick="feTrocarAba('atleta')">Ver protocolo RTS completo →</button>
+        </div>
+      </details>`:''}`;
+  }catch(e){c.innerHTML=`<div style="color:#f87171;padding:16px">${esc(e.message)}</div>`;}
 }
 
 /* ---- ABA ATLETA ---- */
